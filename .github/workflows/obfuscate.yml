@@ -8,6 +8,10 @@ on:
     paths:
       - '明文源吗'
 
+# 提交混淆产物需要写权限，显式声明，不依赖仓库默认设置
+permissions:
+  contents: write
+
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
@@ -15,6 +19,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # 默认的 ACTIONS_TOKEN 在某些设置下不能回推，带上 PAT 兜底
+          token: ${{ secrets.GH_PAT || github.token }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -92,10 +99,13 @@ jobs:
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # 混淆器用了随机标识符，每次产物都不同；只在真正变化时提交
           git add '少年你相信光吗'
           if git diff --staged --quiet; then
             echo "No changes to commit, the obfuscated file is already up-to-date."
-          else
-            git commit -m "部署用这个"
-            git push
+            exit 0
           fi
+          git commit -m "部署用这个"
+          # 别人可能同时推了，先 rebase 再推，失败也别让整个 job 挂掉
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+          git push origin "HEAD:${GITHUB_REF_NAME}"

@@ -2751,9 +2751,7 @@ function 公共节点国家码(国别) {
   return 公共节点国家码映射[键] || (键 ? 键.slice(0, 2).toUpperCase() : 'XX');
 }
 
-// 跟家宽那份一样：只解前一段就够拿 remote/proto/cipher，证书要整条解
-const 公共节点前段长度 = 6000;
-
+// 配置原文是从令牌下载接口拿的完整 .ovpn 文本，不用解 base64，直接按行取指令
 function 公共节点取指令(配置文本, 指令名) {
   const 命中 = 配置文本.match(new RegExp('^[ \\t]*' + 指令名 + '[ \\t]+(.+?)[ \\t]*$', 'm'));
   return 命中 ? 命中[1].trim() : '';
@@ -2762,12 +2760,6 @@ function 公共节点取指令(配置文本, 指令名) {
 function 公共节点取内联块(配置文本, 标签) {
   const 命中 = 配置文本.match(new RegExp('<' + 标签 + '>([\\s\\S]*?)<\\/' + 标签 + '>'));
   return 命中 ? 命中[1].trim() : '';
-}
-
-function 公共节点解配置(配置64) {
-  const 干净 = String(配置64 || '').replace(/\s/g, '');
-  if (干净.length <= 公共节点前段长度) return 解码64(干净);
-  return 解码64(干净.slice(0, 公共节点前段长度));
 }
 
 // 一条配置换一次令牌（300 秒有效），拿到的是 .ovpn 原文

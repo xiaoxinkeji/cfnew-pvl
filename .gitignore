@@ -1,0 +1,13 @@
+# 抓取器的全量清单缓存（33 MB），不要提交
+tools/.cache/
+
+# 抓取产物：节点会过期，按需本地重跑
+pvl/nodes/
+pvl/sub/
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/

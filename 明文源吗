@@ -79,7 +79,15 @@ const 配置默认值 = {
   ispMobile: 'yes',
   ispUnicom: 'yes',
   ispTelecom: 'yes',
-  jk: 'no'
+  jk: 'no',
+  pvl: 'no',
+  pvlURL: '',
+  pvlmin: '',
+  pvlmax: '',
+  pvllimit: '',
+  pvlcountry: '',
+  pvlproto: '',
+  pvlraw: 'yes'
 };
 
 function 是否开启值(值, 默认启用 = false) {
@@ -110,7 +118,7 @@ function 整理有效配置(配置) {
     ...配置默认值,
     ...配置
   };
-  ['ev', 'et', 'ex', 'ech', 'ena', 'epd', 'epi', 'egi', 'ipv4', 'ipv6', 'ispMobile', 'ispUnicom', 'ispTelecom', 'jk'].forEach(键 => {
+  ['ev', 'et', 'ex', 'ech', 'ena', 'epd', 'epi', 'egi', 'ipv4', 'ipv6', 'ispMobile', 'ispUnicom', 'ispTelecom', 'jk', 'pvl', 'pvlraw'].forEach(键 => {
     快照[键] = 归一配置开关(快照[键], 是否开启值(配置默认值[键]));
   });
   if (快照.ev === 'no' && 快照.et === 'no' && 快照.ex === 'no') {
@@ -164,7 +172,15 @@ function 获取环境配置快照(环境值 = {}) {
     ispMobile: ['ispMobile', 'ISPMOBILE', 'ISP_MOBILE'],
     ispUnicom: ['ispUnicom', 'ISPUNICOM', 'ISP_UNICOM'],
     ispTelecom: ['ispTelecom', 'ISPTELECOM', 'ISP_TELECOM'],
-    jk: ['jk', 'JK']
+    jk: ['jk', 'JK'],
+    pvl: ['pvl', 'PVL'],
+    pvlURL: ['pvlURL', 'PVLURL', 'PVL_URL'],
+    pvlmin: ['pvlmin', 'PVLMIN', 'PVL_MIN'],
+    pvlmax: ['pvlmax', 'PVLMAX', 'PVL_MAX'],
+    pvllimit: ['pvllimit', 'PVLLIMIT', 'PVL_LIMIT'],
+    pvlcountry: ['pvlcountry', 'PVLCOUNTRY', 'PVL_COUNTRY'],
+    pvlproto: ['pvlproto', 'PVLPROTO', 'PVL_PROTO'],
+    pvlraw: ['pvlraw', 'PVLRAW', 'PVL_RAW']
   };
   const 快照 = {};
   for (const [键, 名称列表] of Object.entries(映射)) {
@@ -719,6 +735,14 @@ export default {
       启用仓库优选 = 获取配置开关值('egi', true, 本地值734.egi || 本地值734.EGI);
       启用原生地址 = 获取配置开关值('ena', false, 本地值734.ena || 本地值734.ENA);
       启用家宽链式 = 获取配置开关值('jk', false, 本地值734.jk || 本地值734.JK);
+      启用公共节点 = 获取配置开关值('pvl', false, 本地值734.pvl || 本地值734.PVL);
+      公共节点清单网址 = 获取配置文本值('pvlURL', 配置默认值.pvlURL, 本地值734.pvlURL || 本地值734.PVLURL);
+      公共节点最低速度 = 公共节点解析数字(获取配置文本值('pvlmin', 配置默认值.pvlmin, 本地值734.pvlmin || 本地值734.PVLMIN), 0);
+      公共节点最高延迟 = 公共节点解析数字(获取配置文本值('pvlmax', 配置默认值.pvlmax, 本地值734.pvlmax || 本地值734.PVLMAX), 0);
+      公共节点取数上限 = 公共节点解析数字(获取配置文本值('pvllimit', 配置默认值.pvllimit, 本地值734.pvllimit || 本地值734.PVLLIMIT), 120) || 120;
+      公共节点国家过滤 = 公共节点解析列表(获取配置文本值('pvlcountry', 配置默认值.pvlcountry, 本地值734.pvlcountry || 本地值734.PVLCOUNTRY));
+      公共节点只取协议 = 公共节点解析列表(获取配置文本值('pvlproto', 配置默认值.pvlproto, 本地值734.pvlproto || 本地值734.PVLPROTO));
+      公共节点要原文 = 获取配置开关值('pvlraw', true, 本地值734.pvlraw || 本地值734.PVLRAW);
       启用加密客户端问候 = 获取配置开关值('ech', false, 本地值734.ech || 本地值734.ECH);
 
       // 加载自定义DNS和ECH域名配置
@@ -2656,6 +2680,544 @@ async function 获取加密客户端问候配置(域名522) {
     return null;
   }
 }
+// ======================= 公共节点（PublicVPNList 全量直出） =======================
+// 之前家宽链式要自己搭节点、还要靠 VPN Gate 的志愿者共享，掉线是常态。
+// 这里换成直接吃 PublicVPNList 的全量检测清单：那边按小时实测吞吐/RTT，
+// OpenVPN 走清单 + get_token.php 换 .ovpn，多协议走 download.php 直接拿 share URI。
+// 跟家宽链式的区别：不做链式，节点原样直出，出口就是节点自己的 IP，不套 CF 前置。
+const 公共节点清单源 = 解码64('aHR0cHM6Ly9wdWJsaWN2cG5saXN0LmNvbS9sb2NhbC9hcGkvdnBuLWRhdGEucGhwP3N0YXR1cz1hbGw=');
+const 公共节点令牌接口 = 解码64('aHR0cHM6Ly9wdWJsaWN2cG5saXN0LmNvbS9nZXRfdG9rZW4ucGhw');
+const 公共节点下载接口 = 解码64('aHR0cHM6Ly9wdWJsaWN2cG5saXN0LmNvbS9kb3dubG9hZC5waHA=');
+const 公共节点配置接口 = 解码64('aHR0cHM6Ly9wdWJsaWN2cG5saXN0LmNvbS9wcm90b2NvbHMvZG93bmxvYWQucGhw');
+const 公共节点站点 = 解码64('aHR0cHM6Ly9wdWJsaWN2cG5saXN0LmNvbS8=');
+// vless / trojan / vmess / shadowsocks / hysteria2 的列表页就是协议名小写
+const 公共节点协议页 = ['vless', 'trojan', 'vmess', 'shadowsocks', 'hysteria2'];
+const 公共节点协议方案 = { vless: 'vless', trojan: 'trojan', vmess: 'vmess', shadowsocks: 'ss', hysteria2: 'hysteria2' };
+const 公共节点缓存期限 = 30 * 60 * 1000;
+const 公共节点单页上限 = 100;
+const 公共节点分页正则 = /rel="next nofollow"/;
+// 单条 .ovpn 换一次令牌，全量几千条会打爆 Worker，所以只给最快的那批换原文
+const 公共节点取原文上限 = 60;
+// 列表页最多翻这么多页，防止 Worker 跑超时
+const 公共节点翻页上限 = 6;
+
+let 启用公共节点 = false;
+let 公共节点清单网址 = '';
+let 公共节点最低速度 = 0;
+let 公共节点最高延迟 = 0;
+let 公共节点取数上限 = 120;
+let 公共节点国家过滤 = [];
+let 公共节点只取协议 = [];
+let 公共节点要原文 = true;
+let 公共节点缓存 = null;
+let 公共节点缓存时间 = 0;
+
+function 公共节点解析布尔(值, 默认 = false) {
+  if (值 === undefined || 值 === null || 值 === '') return 默认;
+  if (值 === true || 值 === false) return 值;
+  const 文本 = String(值).trim().toLowerCase();
+  if (['yes', 'true', '1', 'on'].includes(文本)) return true;
+  if (['no', 'false', '0', 'off'].includes(文本)) return false;
+  return 默认;
+}
+
+function 公共节点解析数字(值, 默认 = 0) {
+  const 数字 = parseFloat(值);
+  return Number.isFinite(数字) && 数字 >= 0 ? 数字 : 默认;
+}
+
+function 公共节点解析列表(值) {
+  return String(值 || '').split(',').map(项 => 项.trim().toLowerCase()).filter(Boolean);
+}
+
+// 清单里的 country 是 slug（japan / south-korea），这里翻成两字母码给节点命名用
+const 公共节点国家码映射 = {
+  japan: 'JP', 'south-korea': 'KR', usa: 'US', 'united-states': 'US', russia: 'RU',
+  thailand: 'TH', vietnam: 'VN', indonesia: 'ID', canada: 'CA', uk: 'GB',
+  'united-kingdom': 'GB', argentina: 'AR', netherlands: 'NL', germany: 'DE',
+  france: 'FR', singapore: 'SG', 'hong-kong': 'HK', taiwan: 'TW', india: 'IN',
+  malaysia: 'MY', philippines: 'PH', australia: 'AU', brazil: 'BR', mexico: 'MX',
+  spain: 'ES', italy: 'IT', poland: 'PL', sweden: 'SE', finland: 'FI',
+  norway: 'NO', switzerland: 'CH', ukraine: 'UA', turkey: 'TR', iran: 'IR',
+  'czech-republic': 'CZ', romania: 'RO', austria: 'AT', 'south-africa': 'ZA',
+  'new-zealand': 'NZ', ireland: 'IE', belgium: 'BE', denmark: 'DK',
+  hungary: 'HU', portugal: 'PT', greece: 'GR', israel: 'IL', estonia: 'EE',
+  latvia: 'LV', lithuania: 'LT', bulgaria: 'BG', croatia: 'HR',
+  kazakhstan: 'KZ', belarus: 'BY', 'united-arab-emirates': 'AE'
+};
+
+function 公共节点国家码(国别) {
+  const 键 = String(国别 || '').toLowerCase();
+  return 公共节点国家码映射[键] || (键 ? 键.slice(0, 2).toUpperCase() : 'XX');
+}
+
+// 跟家宽那份一样：只解前一段就够拿 remote/proto/cipher，证书要整条解
+const 公共节点前段长度 = 6000;
+
+function 公共节点取指令(配置文本, 指令名) {
+  const 命中 = 配置文本.match(new RegExp('^[ \\t]*' + 指令名 + '[ \\t]+(.+?)[ \\t]*$', 'm'));
+  return 命中 ? 命中[1].trim() : '';
+}
+
+function 公共节点取内联块(配置文本, 标签) {
+  const 命中 = 配置文本.match(new RegExp('<' + 标签 + '>([\\s\\S]*?)<\\/' + 标签 + '>'));
+  return 命中 ? 命中[1].trim() : '';
+}
+
+function 公共节点解配置(配置64) {
+  const 干净 = String(配置64 || '').replace(/\s/g, '');
+  if (干净.length <= 公共节点前段长度) return 解码64(干净);
+  return 解码64(干净.slice(0, 公共节点前段长度));
+}
+
+// 一条配置换一次令牌（300 秒有效），拿到的是 .ovpn 原文
+async function 公共节点取原文(编号) {
+  try {
+    const 令牌响应 = await fetch(公共节点令牌接口, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': 公共节点站点 + 'download/' + 编号 + '/'
+      },
+      body: 'id=' + encodeURIComponent(编号)
+    });
+    if (!令牌响应.ok) return null;
+    const 令牌数据 = await 令牌响应.json();
+    const 令牌 = 令牌数据 && 令牌数据.token;
+    if (!令牌) return null;
+    const 配置响应 = await fetch(公共节点下载接口 + '?token=' + encodeURIComponent(令牌), {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/x-openvpn-profile' }
+    });
+    if (!配置响应.ok) return null;
+    const 文本 = await 配置响应.text();
+    return 文本 && 文本.indexOf('remote ') !== -1 ? 文本 : null;
+  } catch (错误) {
+    return null;
+  }
+}
+
+function 公共节点解析原文(配置文本) {
+  if (!配置文本) return null;
+  const 远端 = 公共节点取指令(配置文本, 'remote').split(/\s+/);
+  if (!远端[0]) return null;
+  return {
+    地址: 远端[0],
+    端口: parseInt(远端[1], 10) || 1194,
+    协议: (公共节点取指令(配置文本, 'proto') || 'tcp').toLowerCase(),
+    加密: 公共节点取指令(配置文本, 'cipher') || 'AES-128-CBC',
+    摘要: 公共节点取指令(配置文本, 'auth') || 'SHA1',
+    证书: 公共节点取内联块(配置文本, 'ca'),
+    公钥: 公共节点取内联块(配置文本, 'cert'),
+    私钥: 公共节点取内联块(配置文本, 'key'),
+    原文: 配置文本
+  };
+}
+
+// 一次拿全量清单（约 33MB，靠 cf 缓存顶住）
+async function 公共节点取清单() {
+  const 响应 = await fetch(公共节点清单网址 || 公共节点清单源, {
+    headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Accept-Encoding': 'identity' },
+    cf: { cacheTtl: 1800, cacheEverything: true }
+  });
+  if (!响应.ok) throw new Error('节点清单返回 ' + 响应.status);
+  const 全部 = JSON.parse(await 响应.text());
+  if (!Array.isArray(全部)) throw new Error('节点清单格式不对');
+  return 全部;
+}
+
+function 公共节点筛选(全部) {
+  const 国家集合 = 公共节点国家过滤.length ? new Set(公共节点国家过滤) : null;
+  const 已见 = new Set();
+  const 候选 = [];
+  for (const 行 of 全部) {
+    // 只要实测通过、能下配置的。清单里 4.5 万行大半是死的，全塞进来客户端会卡死
+    if (!行.active || !行.downloadable) continue;
+    const 国别 = String(行.country || '').toLowerCase();
+    if (国家集合 && !国家集合.has(国别) && !国家集合.has(公共节点国家码(国别).toLowerCase())) continue;
+    if (公共节点最低速度 && (行.checkerMeasuredThroughputMbps || 0) < 公共节点最低速度) continue;
+    if (公共节点最高延迟 && (行.checkerMeasuredTunnelRttMs || 999999) > 公共节点最高延迟) continue;
+    const 键 = (行.ip || 行.host) + ':' + 行.port;
+    if (已见.has(键)) continue;
+    已见.add(键);
+    候选.push(行);
+  }
+  // 实测速度倒序，慢的沉底；速度一样按延迟排
+  候选.sort((甲, 乙) => {
+    const 差 = (乙.checkerMeasuredThroughputMbps || 0) - (甲.checkerMeasuredThroughputMbps || 0);
+    if (差 !== 0) return 差;
+    return (甲.checkerMeasuredTunnelRttMs || 999999) - (乙.checkerMeasuredTunnelRttMs || 999999);
+  });
+  return 公共节点取数上限 > 0 ? 候选.slice(0, 公共节点取数上限) : 候选;
+}
+
+// 多协议：翻列表页拿稳定 ID，再并发换 share URI
+async function 公共节点取协议配置(协议, 上限) {
+  const 结果 = [];
+  const 已见 = new Set();
+  const 编号正则 = /id=([a-f0-9]{64})/g;
+  for (let 页 = 1; 页 <= 公共节点翻页上限; 页++) {
+    const 网址 = 公共节点站点 + 协议 + '/?per_page=' + 公共节点单页上限 + (页 > 1 ? '&page=' + 页 : '');
+    let 页面文本 = '';
+    try {
+      const 响应 = await fetch(网址, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' },
+        cf: { cacheTtl: 600, cacheEverything: true }
+      });
+      if (!响应.ok) break;
+      页面文本 = await 响应.text();
+    } catch (错误) {
+      break;
+    }
+    const 编号列表 = [];
+    let 命中;
+    编号正则.lastIndex = 0;
+    while ((命中 = 编号正则.exec(页面文本)) !== null) {
+      const 编号 = 命中[1];
+      if (!已见.has(编号)) {
+        已见.add(编号);
+        编号列表.push(编号);
+      }
+    }
+    if (!编号列表.length) break;
+    // 并发换配置，单条失败就丢掉，不拖累整体
+    const 批次 = await Promise.all(编号列表.map(async 编号 => {
+      try {
+        const 响应 = await fetch(公共节点配置接口 + '?protocol=' + 协议 + '&id=' + 编号 + '&format=json', {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Referer': 网址 }
+        });
+        if (!响应.ok) return null;
+        const 数据 = await 响应.json();
+        const 链接 = 数据 && 数据.config_uri;
+        if (!链接) return null;
+        const 方案 = 公共节点协议方案[协议] || 协议;
+        if (String(链接).toLowerCase().indexOf(方案 + '://') !== 0) return null;
+        return { 协议, 编号, 链接 };
+      } catch (错误) {
+        return null;
+      }
+    }));
+    for (const 项 of 批次) {
+      if (!项) continue;
+      结果.push(项);
+      if (上限 > 0 && 结果.length >= 上限) return 结果;
+    }
+    if (!公共节点分页正则.test(页面文本)) break;
+  }
+  return 结果;
+}
+
+async function 公共节点取全部() {
+  const 现在 = Date.now();
+  if (公共节点缓存 && 现在 - 公共节点缓存时间 < 公共节点缓存期限) return 公共节点缓存;
+  const 要开放 = !公共节点只取协议.length || 公共节点只取协议.includes('openvpn');
+  const 协议清单 = 公共节点只取协议.length
+    ? 公共节点协议页.filter(项 => 公共节点只取协议.includes(项))
+    : 公共节点协议页.slice();
+
+  const 开放任务 = 要开放 ? 公共节点取清单().catch(() => null) : Promise.resolve(null);
+  const 协议任务 = Promise.all(协议清单.map(协议 => 公共节点取协议配置(协议, 公共节点取数上限).catch(() => [])));
+  const [清单结果, 协议结果] = await Promise.all([开放任务, 协议任务]);
+
+  const 开放节点 = [];
+  if (清单结果) {
+    const 选中 = 公共节点筛选(清单结果);
+    // 换 .ovpn 原文要一条一个令牌请求，全量做会拖超时，只给最快那批换
+    const 要原文 = 公共节点要原文 ? 选中.slice(0, 公共节点取原文上限) : [];
+    const 原文列表 = await Promise.all(要原文.map(行 => 公共节点取原文(行.id)));
+    const 已见端点 = new Set();
+    要原文.forEach((行, 下标) => {
+      const 解析 = 公共节点解析原文(原文列表[下标]);
+      if (!解析 || !解析.证书) return;
+      const 键 = 解析.地址 + ':' + 解析.端口;
+      if (已见端点.has(键)) return;
+      已见端点.add(键);
+      开放节点.push({ 行, 解析 });
+    });
+    if (!开放节点.length) {
+      // 原文没换到就退回纯元数据，至少端点还在（客户端自己找 .ovpn）
+      for (const 行 of 选中) {
+        const 键 = (行.ip || 行.host) + ':' + 行.port;
+        if (已见端点.has(键)) continue;
+        已见端点.add(键);
+        开放节点.push({
+          行,
+          解析: {
+            地址: 行.ip || 行.host, 端口: 行.port || 1194,
+            协议: String(行.proto || 'tcp').toLowerCase(),
+            加密: 'AES-128-CBC', 摘要: 'SHA1',
+            证书: '', 公钥: '', 私钥: '', 原文: ''
+          }
+        });
+      }
+    }
+  }
+  const 协议节点 = [];
+  for (const 组 of 协议结果) {
+    if (Array.isArray(组)) 协议节点.push(...组);
+  }
+  if (!开放节点.length && !协议节点.length) throw new Error('没拉到任何可用节点');
+  公共节点缓存 = { 开放节点, 协议节点, 时间: 现在 };
+  公共节点缓存时间 = 现在;
+  return 公共节点缓存;
+}
+
+function 公共节点缩进证书(文本, 空白) {
+  return String(文本 || '').split('\n').map(行 => 行.trim()).filter(行 => 行).map(行 => 空白 + 行).join('\n');
+}
+
+function 公共节点去重名(名称, 已用) {
+  let 候选 = 名称;
+  let 序号 = 2;
+  while (已用.has(候选)) {
+    候选 = 名称 + '-' + 序号;
+    序号++;
+  }
+  已用.add(候选);
+  return 候选;
+}
+
+// 把 share URI 翻成 Clash 节点行。VMess 是 base64 的 JSON，其余是 URL 参数
+function 公共节点转节点行(方案, 名称, 统一资源) {
+  const 行 = ['  - name: "' + 名称 + '"'];
+  try {
+    if (方案 === 'vmess') {
+      const 载荷 = 统一资源.split('://')[1].split('#')[0];
+      const 补齐 = 载荷 + '='.repeat((4 - 载荷.length % 4) % 4);
+      const 配置 = JSON.parse(解码64(补齐));
+      行.push('    type: vmess',
+        '    server: ' + (配置.add || ''),
+        '    port: ' + (parseInt(配置.port, 10) || 0),
+        '    uuid: ' + (配置.id || ''),
+        '    alterId: ' + (parseInt(配置.aid, 10) || 0),
+        '    cipher: ' + (配置.scy || 'auto'),
+        '    udp: true');
+      if (配置.net === 'ws') {
+        行.push('    network: ws', '    ws-opts:', '      path: ' + (配置.path || '/'));
+        if (配置.host) 行.push('      headers:', '        Host: ' + 配置.host);
+      }
+      if (配置.tls) {
+        行.push('    tls: true');
+        if (配置.sni) 行.push('    servername: ' + 配置.sni);
+      }
+      return 行;
+    }
+    const 位置 = 统一资源.indexOf('://');
+    const 主体 = 统一资源.slice(位置 + 3);
+    const 锚 = 主体.indexOf('#');
+    const 参数段 = 锚 === -1 ? 主体 : 主体.slice(0, 锚);
+    const 问号 = 参数段.indexOf('?');
+    const 地址段 = 问号 === -1 ? 参数段 : 参数段.slice(0, 问号);
+    const 参数 = new URLSearchParams(问号 === -1 ? '' : 参数段.slice(问号 + 1));
+    const 认证位置 = 地址段.lastIndexOf('@');
+    const 主机段 = 认证位置 === -1 ? 地址段 : 地址段.slice(认证位置 + 1);
+    let 主机 = 主机段;
+    let 端口 = '0';
+    if (主机段.startsWith('[')) {
+      const 闭 = 主机段.indexOf(']');
+      主机 = 主机段.slice(1, 闭);
+      端口 = 主机段.slice(闭 + 2);
+    } else {
+      const 冒号 = 主机段.lastIndexOf(':');
+      主机 = 主机段.slice(0, 冒号);
+      端口 = 主机段.slice(冒号 + 1);
+    }
+    const 用户 = 认证位置 === -1 ? '' : decodeURIComponent(地址段.slice(0, 认证位置));
+    if (方案 === 'vless') {
+      行.push('    type: vless', '    server: ' + 主机, '    port: ' + (parseInt(端口, 10) || 0),
+        '    uuid: ' + 用户, '    udp: true');
+      const 安全 = 参数.get('security') || 'none';
+      if (安全 === 'reality') {
+        行.push('    tls: true', '    reality-opts:', '      public-key: ' + (参数.get('pbk') || ''));
+        if (参数.get('sid')) 行.push('      short-id: ' + 参数.get('sid'));
+      } else if (安全 === 'tls') {
+        行.push('    tls: true');
+      }
+      if (参数.get('sni')) 行.push('    servername: ' + 参数.get('sni'));
+      if (参数.get('fp')) 行.push('    client-fingerprint: ' + 参数.get('fp'));
+      const 传输 = 参数.get('type') || 'tcp';
+      if (传输 === 'ws') {
+        行.push('    network: ws', '    ws-opts:', '      path: ' + (参数.get('path') || '/'));
+        if (参数.get('host')) 行.push('      headers:', '        Host: ' + 参数.get('host'));
+      } else if (传输 === 'grpc') {
+        行.push('    network: grpc', '    grpc-opts:', '      grpc-service-name: ' + (参数.get('serviceName') || ''));
+      }
+      if (参数.get('flow')) 行.push('    flow: ' + 参数.get('flow'));
+    } else if (方案 === 'trojan') {
+      行.push('    type: trojan', '    server: ' + 主机, '    port: ' + (parseInt(端口, 10) || 0),
+        '    password: "' + 用户 + '"', '    udp: true');
+      if (参数.get('sni')) 行.push('    sni: ' + 参数.get('sni'));
+      if (参数.get('type') === 'ws') {
+        行.push('    network: ws', '    ws-opts:', '      path: ' + (参数.get('path') || '/'));
+      }
+    } else if (方案 === 'shadowsocks') {
+      let 方法 = '';
+      let 密码 = '';
+      try {
+        const 补齐 = 用户 + '='.repeat((4 - 用户.length % 4) % 4);
+        const 已解 = 解码64(补齐);
+        if (已解.indexOf(':') !== -1) {
+          方法 = 已解.split(':')[0];
+          密码 = 已解.split(':').slice(1).join(':');
+        }
+      } catch (错误) {
+        if (用户.indexOf(':') !== -1) {
+          方法 = 用户.split(':')[0];
+          密码 = 用户.split(':').slice(1).join(':');
+        }
+      }
+      行.push('    type: ss', '    server: ' + 主机, '    port: ' + (parseInt(端口, 10) || 0),
+        '    cipher: ' + (方法 || 'chacha20-ietf-poly1305'), '    password: "' + 密码 + '"');
+      const 插件 = 参数.get('plugin');
+      if (插件) {
+        行.push('    plugin: ' + 插件.split(';')[0], '    plugin-opts:');
+        for (const 段 of 插件.split(';').slice(1)) {
+          const 等 = 段.indexOf('=');
+          if (等 !== -1) 行.push('      ' + 段.slice(0, 等) + ': ' + 段.slice(等 + 1));
+        }
+      }
+    } else if (方案 === 'hysteria2') {
+      行.push('    type: hysteria2', '    server: ' + 主机, '    port: ' + (parseInt(端口, 10) || 0),
+        '    password: "' + 用户 + '"', '    udp: true');
+      if (参数.get('sni')) 行.push('    sni: ' + 参数.get('sni'));
+      if (参数.get('insecure')) 行.push('    skip-cert-verify: ' + 参数.get('insecure'));
+    } else {
+      return [];
+    }
+  } catch (错误) {
+    return [];
+  }
+  return 行;
+}
+
+// Clash 版订阅：OpenVPN + 多协议混编，按协议分组
+async function 生成公共节点订阅() {
+  const { 开放节点, 协议节点 } = await 公共节点取全部();
+  const 域名系统 = 自定义域名系统 || 'https://223.5.5.5/dns-query';
+  const 已用名 = new Set();
+  const 节点段 = ['proxies:'];
+  const 分组名 = [];
+  const 按组 = {};
+
+  if (开放节点.length) {
+    const 组名 = '🏠 公共 OpenVPN';
+    分组名.push(组名);
+    按组[组名] = [];
+    const 国家计数 = {};
+    开放节点.forEach((项, 下标) => {
+      const 码 = 公共节点国家码(项.行.country);
+      国家计数[码] = (国家计数[码] || 0) + 1;
+      const 名称 = 公共节点去重名('🏠 ' + 码 + '-' + String(国家计数[码]).padStart(2, '0'), 已用名);
+      const 解析 = 项.解析;
+      const 行 = [
+        '  - name: "' + 名称 + '"',
+        '    type: ' + 解码64('b3BlbnZwbg=='),
+        '    server: ' + 解析.地址,
+        '    port: ' + 解析.端口,
+        '    proto: ' + 解析.协议,
+        '    username: vpn',
+        '    password: vpn',
+        '    cipher: ' + 解析.加密,
+        '    auth: ' + 解析.摘要,
+        '    udp: ' + (解析.协议 === 'udp' ? 'true' : 'false'),
+        '    handshake-timeout: 30',
+        '    remote-dns-resolve: true',
+        '    dns: [ 8.8.8.8, 1.1.1.1 ]'
+      ];
+      // 证书基本同一份，第一个定锚点后面引用，几十个节点能省几百 KB
+      if (下标 === 0) {
+        if (解析.证书) 行.push('    ca: &pvlca |-', 公共节点缩进证书(解析.证书, '      '));
+        if (解析.公钥) 行.push('    cert: &pvlcert |-', 公共节点缩进证书(解析.公钥, '      '));
+        if (解析.私钥) 行.push('    key: &pvlkey |-', 公共节点缩进证书(解析.私钥, '      '));
+      } else {
+        if (解析.证书) 行.push('    ca: *pvlca');
+        if (解析.公钥) 行.push('    cert: *pvlcert');
+        if (解析.私钥) 行.push('    key: *pvlkey');
+      }
+      节点段.push(行.join('\n'));
+      按组[组名].push(名称);
+    });
+  }
+
+  const 协议计数 = {};
+  for (const 项 of 协议节点) {
+    const 组名 = '⚡ ' + String(项.协议).toUpperCase();
+    if (!按组[组名]) {
+      分组名.push(组名);
+      按组[组名] = [];
+    }
+    协议计数[组名] = (协议计数[组名] || 0) + 1;
+    const 名称 = 公共节点去重名('⚡ ' + String(项.协议).toUpperCase() + '-' + String(协议计数[组名]).padStart(2, '0'), 已用名);
+    const 行 = 公共节点转节点行(String(项.协议).toLowerCase(), 名称, 项.链接);
+    if (!行.length) continue;
+    节点段.push(行.join('\n'));
+    按组[组名].push(名称);
+  }
+
+  if (!分组名.length) throw new Error('没有可输出的节点');
+
+  const 头部 = [
+    '# cfnew 公共节点订阅：节点取自 PublicVPNList 实测清单',
+    '# OpenVPN 节点需要 mihomo 1.19.25+ / Clash Meta 内核',
+    '# 节点是第三方共享的，掉线很正常，自动组会自己往下换',
+    'mixed-port: 7890',
+    'allow-lan: false',
+    'mode: rule',
+    'log-level: info',
+    'ipv6: false',
+    'unified-delay: true',
+    'tcp-concurrent: true',
+    'external-controller: 127.0.0.1:9090',
+    'dns:',
+    '  enable: true',
+    '  ipv6: false',
+    '  enhanced-mode: fake-ip',
+    '  fake-ip-range: 198.18.0.1/16',
+    '  nameserver:',
+    '    - ' + 域名系统,
+    '    - https://1.1.1.1/dns-query',
+    ''
+  ];
+  const 列出 = 名称列表 => 名称列表.map(名称 => '      - "' + 名称 + '"').join('\n');
+  const 全部名称 = [];
+  for (const 组名 of 分组名) 全部名称.push(...按组[组名]);
+  const 分组段 = [解码64('cHJveHktZ3JvdXBzOg==')];
+  // 全量上百个节点，测一轮就是上百次握手，间隔拉长、用到才测
+  分组段.push('  - name: "♻️ 公共自动"', '    type: fallback',
+    '    url: https://www.gstatic.com/generate_204', '    interval: 1800', '    lazy: true',
+    '    proxies:', 列出(全部名称.slice(0, 200)));
+  for (const 组名 of 分组名) {
+    分组段.push('  - name: "' + 组名 + '"', '    type: select', '    proxies:', 列出(按组[组名]));
+  }
+  const 主选列表 = ['      - "♻️ 公共自动"'];
+  for (const 组名 of 分组名) 主选列表.push('      - "' + 组名 + '"');
+  主选列表.push('      - DIRECT');
+  分组段.push('  - name: "🚀 节点选择"', '    type: select', '    proxies:', 主选列表.join('\n'));
+  const 规则段 = [
+    'rules:',
+    '  - GEOIP,LAN,DIRECT,no-resolve',
+    '  - GEOIP,CN,DIRECT,no-resolve',
+    '  - MATCH,🚀 节点选择'
+  ];
+  return 头部.concat(节点段, [''], 分组段, [''], 规则段, ['']).join('\n');
+}
+
+// 纯 URI 版订阅：多协议原样输出，OpenVPN 用 ovpn:// 内联整份配置
+async function 生成公共节点链接列表() {
+  const { 开放节点, 协议节点 } = await 公共节点取全部();
+  const 链接列表 = [];
+  for (const 项 of 协议节点) 链接列表.push(项.链接);
+  for (const 项 of 开放节点) {
+    if (!项.解析 || !项.解析.原文) continue;
+    const 码 = 公共节点国家码(项.行.country);
+    const 名称 = '🏠 ' + 码 + '-' + 项.解析.地址 + ':' + 项.解析.端口;
+    链接列表.push('ovpn://' + encodeURIComponent(项.解析.原文) + '#' + encodeURIComponent(名称));
+  }
+  return 链接列表;
+}
+
 // ======================= 家宽链式（住宅宽带当落地） =======================
 // 跟之前的套娃一个思路：cfnew 自己的节点在前面带路，落地换成网友共享出来的家庭宽带。
 // 客户端会把落地节点的整条隧道塞进前置节点里走，握手走 CF 边缘，出网是住宅 IP。
@@ -2883,6 +3445,14 @@ async function 处理订阅请求(请求507, 用户506, 网址505 = null) {
   const 工作器域名504 = 网址505.hostname;
   const 目标503 = 网址505.searchParams.get('target') || 'base64';
   const 家宽目标 = ['vg', 'jk', 解码64('amlha3Vhbg==')].includes(目标503.toLowerCase());
+  const 公共目标 = ['pvl', 'pv', 'public', 解码64('cHVibGlj')].includes(目标503.toLowerCase());
+  const 公共链接目标 = ['pvluri', 'pvl-u', 解码64('cHZsdXJp')].includes(目标503.toLowerCase());
+  if ((公共目标 || 公共链接目标) && !启用公共节点) {
+    return new Response('公共节点没开。去配置管理勾上「启用公共节点（PublicVPNList）」，或者加环境变量 pvl=yes。', {
+      status: 403,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
+    });
+  }
   if (家宽目标 && !启用家宽链式) {
     return new Response('家宽链式没开。去配置管理勾上「开启家宽链式」，或者加环境变量 jk=yes。', {
       status: 403,
@@ -3047,6 +3617,31 @@ async function 处理订阅请求(请求507, 用户506, 网址505 = null) {
         });
       }
       内容类型483 = 'text/yaml; charset=utf-8';
+      break;
+    case 'pvl':
+    case 'pv':
+    case 'public':
+      try {
+        订阅内容 = await 生成公共节点订阅();
+      } catch (错误) {
+        return new Response('公共节点暂时拉不到：' + (错误 && 错误.message ? 错误.message : 错误) + '\n过几分钟再更新，客户端会先用着上一份。', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
+        });
+      }
+      内容类型483 = 'text/yaml; charset=utf-8';
+      break;
+    case 'pvluri':
+    case 解码64('cHZsdXJp'):
+      try {
+        订阅内容 = (await 生成公共节点链接列表()).join('\n');
+      } catch (错误) {
+        return new Response('公共节点暂时拉不到：' + (错误 && 错误.message ? 错误.message : 错误) + '\n过几分钟再更新，客户端会先用着上一份。', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }
+        });
+      }
+      内容类型483 = 'text/plain; charset=utf-8';
       break;
     case atob('c3VyZ2U='):
     case atob('c3VyZ2Uy'):
@@ -4326,6 +4921,18 @@ async function 处理订阅值(请求241, 用户240 = null) {
       jkEnable: '开启家宽链式',
       jkHint: 解码64('5byA5LqG5LmL5ZCO5a6i5oi356uv5YiX6KGo5aSa5LiA5Liq44CMQ0xBU0gg5a625a6944CN44CCQ0Yg6IqC54K55bim6Lev77yM5Ye65Y+j5o2i5oiQ5pel5pys44CB6Z+p5Zu9562J5Zyw55qE5a625bqt5a695bim44CC6KaBIENsYXNoIE1ldGEg5YaF5qC4IDEuMTkuMjUg5Lul5LiK5omN6K6k77yMQ2xhc2ggVmVyZ2UgUmV244CBRmxDbGFzaOOAgUNNRkEg6YO96KGM44CC6IqC54K55piv572R5Y+L5YWx5Lqr55qE77yM5pe25LiN5pe25Lya5o6J77yM6K6i6ZiF6YeM5Lya6Ieq5bex5o2i44CC'),
       jkClient: 'CLASH 家宽',
+      pvlSection: '公共节点（PublicVPNList）',
+      pvlEnable: '启用公共节点（PublicVPNList）',
+      pvlHint: 解码64('5byA5ZCv5LmL5ZCO5a6i5oi356uv5YiX6KGo5aSa5LiA5Liq44CMQ0xBU0gg5YWs5YWx44CN5ZKM5LiA5Liq44CM5YWs5YWx6L+e5o6l44CN44CC6IqC54K55YWo6YOo5Y+W6IeqIFB1YmxpY1ZQTkxpc3Qg55qE5a6e5rWL5riF5Y2V77yM5oyJ6YCf5bqm5ZKM5bu26L+f5o6S5bqP77yM5LiN6ZyA6KaB6Ieq5bex5pCt5pyN5Yqh5Zmo44CCT3BlblZQTiDoioLngrnpnIDopoEgQ2xhc2ggTWV0YSAxLjE5LjI1IOS7peS4iuWGheaguO+8m1ZMRVNTL1Ryb2phbi9TUyDnrYnljY/orq7ku7vmhI/lhoXmoLjpg73og73nlKjjgILoioLngrnmmK/nrKzkuInmlrnlhbHkuqvnmoTvvIzmjonnur/mraPluLjvvIzoh6rliqjnu4TkvJrlvoDkuIvmjaLjgII='),
+      pvlClient: 'CLASH 公共',
+      pvlUriClient: '公共连接',
+      pvlUrlLabel: '节点清单地址（留空用官方）',
+      pvlMinLabel: '最低实测速度 (Mbps)',
+      pvlMaxLabel: '最高实测延迟 (ms)',
+      pvlLimitLabel: '每种协议最多取',
+      pvlCountryLabel: '只留这些国家（逗号分隔）',
+      pvlProtoLabel: '只取这些协议（逗号分隔）',
+      pvlRawLabel: '抓取 OpenVPN 原文配置',
       allowAPIManagement: '允许API管理 (ae):',
       regionMatching: '地区匹配 (rm):',
       downgradeControl: 解码64('5Ye656uZ5pa55byPIChxaik6'),
@@ -4491,6 +5098,18 @@ async function 处理订阅值(请求241, 用户240 = null) {
       jkEnable: 'فعال‌سازی زنجیره اینترنت خانگی',
       jkHint: 解码64('2b7YsyDYp9iyINmB2LnYp9mE4oCM2LPYp9iy24zYjCDar9iy24zZhtmHIMKrQ0xBU0gg2K7Yp9mG2q/bjMK7INio2Ycg2YHZh9ix2LPYqiDaqdmE2KfbjNmG2KrigIzZh9inINin2LbYp9mB2Ycg2YXbjOKAjNi02YjYry4g2q/YsdmH4oCM2YfYp9uMIENGINmF2LPbjNixINix2Kcg2KjYp9iyINmF24zigIzaqdmG2YbYryDZiCDYrtix2YjYrNuMINin2LIg2KfbjNmG2KrYsdmG2Kog2K7Yp9mG2q/bjCDamNin2b7ZhtiMINqp2LHZhyDZiCDaqdi02YjYsdmH2KfbjCDYr9uM2q/YsSDYp9iz2KouINmB2YLYtyDZh9iz2KrZhyBDbGFzaCBNZXRhINmG2LPYrtmHIDEuMTkuMjUg2KjZhyDYqNin2YTYpyDYotmGINix2Kcg2YXbjOKAjNi02YbYp9iz2K/YmyBDbGFzaCBWZXJnZSBSZXbYjCBGbENsYXNoINmIIENNRkEg2qnYp9ixINmF24zigIzaqdmG2YbYry4g2q/YsdmH4oCM2YfYpyDYp9i02KrYsdin2qnbjCDZh9iz2KrZhtivINmIINqv2KfZh9uMINmC2LfYuSDZhduM4oCM2LTZiNmG2K/YjCDYp9i02KrYsdin2qkg2K7ZiNiv2LQg2q/YsdmHINiv24zar9ix24wg2LHYpyDYp9mG2KrYrtin2Kgg2YXbjOKAjNqp2YbYry4='),
       jkClient: 'CLASH خانگی',
+      pvlSection: 'سرورهای عمومی (PublicVPNList)',
+      pvlEnable: 'فعال‌سازی سرورهای عمومی (PublicVPNList)',
+      pvlHint: 解码64('2YHYudin2YTigIzYs9in2LLbjCDYs9ix2YjYsdmH2KfbjCDYudmF2YjZhduMIFB1YmxpY1ZQTkxpc3Qg2LHYpyDYqNmHINmB2YfYsdiz2Kog2qnZhNin24zZhtiqINin2LbYp9mB2Ycg2YXbjOKAjNqp2YbYry4g2LPYsdmI2LHZh9inINio2LEg2KfYs9in2LMg2LPYsdi52Kog2Ygg2KrYo9iu24zYsSDYp9mG2K/Yp9iy2YfigIzar9uM2LHbjCDYtNiv2Ycg2YXYsdiq2Kgg2YXbjOKAjNi02YjZhtivINmIINmG24zYp9iy24wg2KjZhyDYs9ix2YjYsSDYtNiu2LXbjCDZhtiv2KfYsdmG2K8u'),
+      pvlClient: 'CLASH عمومی',
+      pvlUriClient: 'اتصال عمومی',
+      pvlUrlLabel: 'آدرس فهرست سرورها (خالی = پیش‌فرض)',
+      pvlMinLabel: 'حداقل سرعت اندازه‌گیری شده (Mbps)',
+      pvlMaxLabel: 'حداکثر تأخیر اندازه‌گیری شده (ms)',
+      pvlLimitLabel: 'حداکثر تعداد هر پروتکل',
+      pvlCountryLabel: 'فقط این کشورها (با کاما)',
+      pvlProtoLabel: 'فقط این پروتکل‌ها (با کاما)',
+      pvlRawLabel: 'دریافت فایل کامل OpenVPN',
       allowAPIManagement: 'اجازه مدیریت API (ae):',
       regionMatching: 'تطبیق منطقه (rm):',
       downgradeControl: 解码64('2LHZiNi0INiu2LHZiNisIChxaik6'),
@@ -5539,6 +6158,8 @@ async function 处理订阅值(请求241, 用户240 = null) {
                     <button class="client-btn" onclick="生成客户端链接(atob('djJyYXk='), 'NEKORAY')">NEKORAY</button>
                     <button class="client-btn" onclick="生成客户端链接(atob('djJyYXk='), 'Shadowrocket')">Shadowrocket</button>
                     <button class="client-btn" id="jkClientBtn" style="${启用家宽链式 ? '' : 'display: none;'}" onclick="生成客户端链接('vg', '${翻译值.jkClient}')">${翻译值.jkClient}</button>
+                    <button class="client-btn" id="pvlClientBtn" style="${启用公共节点 ? '' : 'display: none;'}" onclick="生成客户端链接('pvl', '${翻译值.pvlClient}')">${翻译值.pvlClient}</button>
+                    <button class="client-btn" id="pvlUriClientBtn" style="${启用公共节点 ? '' : 'display: none;'}" onclick="生成客户端链接('pvluri', '${翻译值.pvlUriClient}')">${翻译值.pvlUriClient}</button>
                 </div>
                 <div class="subscription-url" id="clientSubscriptionUrl"></div>
             </div>
@@ -5792,6 +6413,42 @@ async function 处理订阅值(请求241, 用户240 = null) {
                                         <span style="font-size: 1.1rem;">${翻译值.jkEnable}</span>
                                 </label>
                                     <small style="color: #7aa9c4; font-size: 0.85rem; display: block; margin-top: 10px;">${翻译值.jkHint}</small>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 8px; color: #00f0ff; font-weight: bold; text-shadow: 0 0 3px #00f0ff;">${翻译值.pvlSection}</label>
+                            <div style="padding: 15px; background: rgba(15, 3, 40, 0.6); border: 1px solid #00f0ff; border-radius: 5px;">
+                                <label style="display: inline-flex; align-items: center; cursor: pointer; color: #00f0ff;">
+                                    <input type="checkbox" id="pvl" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                                        <span style="font-size: 1.1rem;">${翻译值.pvlEnable}</span>
+                                </label>
+                                    <small style="color: #7aa9c4; font-size: 0.85rem; display: block; margin-top: 10px;">${翻译值.pvlHint}</small>
+                                <div style="margin-top: 12px; display: grid; gap: 10px;" id="pvlOptions">
+                                    <label style="display: block; color: #00f0ff; font-size: 0.9rem;">${翻译值.pvlUrlLabel}
+                                        <input type="text" id="pvlURL" placeholder="https://publicvpnlist.com/local/api/vpn-data.php?status=all" style="width: 100%; margin-top: 5px; padding: 8px; background: rgba(8, 4, 28, 0.9); border: 1px solid #00f0ff; color: #00f0ff; border-radius: 4px; box-sizing: border-box;">
+                                    </label>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                        <label style="display: block; color: #00f0ff; font-size: 0.9rem;">${翻译值.pvlMinLabel}
+                                            <input type="number" id="pvlmin" min="0" step="0.1" style="width: 100%; margin-top: 5px; padding: 8px; background: rgba(8, 4, 28, 0.9); border: 1px solid #00f0ff; color: #00f0ff; border-radius: 4px; box-sizing: border-box;">
+                                        </label>
+                                        <label style="display: block; color: #00f0ff; font-size: 0.9rem;">${翻译值.pvlMaxLabel}
+                                            <input type="number" id="pvlmax" min="0" step="1" style="width: 100%; margin-top: 5px; padding: 8px; background: rgba(8, 4, 28, 0.9); border: 1px solid #00f0ff; color: #00f0ff; border-radius: 4px; box-sizing: border-box;">
+                                        </label>
+                                    </div>
+                                    <label style="display: block; color: #00f0ff; font-size: 0.9rem;">${翻译值.pvlLimitLabel}
+                                        <input type="number" id="pvllimit" min="1" step="1" placeholder="120" style="width: 100%; margin-top: 5px; padding: 8px; background: rgba(8, 4, 28, 0.9); border: 1px solid #00f0ff; color: #00f0ff; border-radius: 4px; box-sizing: border-box;">
+                                    </label>
+                                    <label style="display: block; color: #00f0ff; font-size: 0.9rem;">${翻译值.pvlCountryLabel}
+                                        <input type="text" id="pvlcountry" placeholder="japan,south-korea,usa" style="width: 100%; margin-top: 5px; padding: 8px; background: rgba(8, 4, 28, 0.9); border: 1px solid #00f0ff; color: #00f0ff; border-radius: 4px; box-sizing: border-box;">
+                                    </label>
+                                    <label style="display: block; color: #00f0ff; font-size: 0.9rem;">${翻译值.pvlProtoLabel}
+                                        <input type="text" id="pvlproto" placeholder="openvpn,vless,trojan" style="width: 100%; margin-top: 5px; padding: 8px; background: rgba(8, 4, 28, 0.9); border: 1px solid #00f0ff; color: #00f0ff; border-radius: 4px; box-sizing: border-box;">
+                                    </label>
+                                    <label style="display: inline-flex; align-items: center; cursor: pointer; color: #00f0ff;">
+                                        <input type="checkbox" id="pvlraw" style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">
+                                            <span style="font-size: 0.95rem;">${翻译值.pvlRawLabel}</span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                         <div style="margin-bottom: 15px;">
@@ -6141,8 +6798,9 @@ function 生成客户端链接(客户端类型, 客户端名称) {
     网址值20190.style.overflowX = "auto";
     网址值20190.style.maxWidth = "100%";
     网址值20190.style.boxSizing = "border-box";
-    if (客户端类型 === 'vg') {
+    if (客户端类型 === 'vg' || 客户端类型 === 'pvl') {
       方案网址 = '${解码64('Y2xhc2g6Ly9pbnN0YWxsLWNvbmZpZz91cmw9')}' + encodeURIComponent(最终网址);
+      if (客户端类型 === 'pvl') 显示名称 = 'CLASH';
     } else if (客户端类型 === atob('Y2xhc2g=')) {
       if (客户端名称 === 'STASH') {
         方案网址 = '${解码64('c3Rhc2g6Ly9pbnN0YWxsP3VybD0=')}' + encodeURIComponent(最终网址);
@@ -6679,6 +7337,19 @@ function 应用配置到界面(配置) {
   写入开关值('jk', 配置.jk, false);
   const 家宽按钮 = document.getElementById('jkClientBtn');
   if (家宽按钮) 家宽按钮.style.display = 是否开关启用(配置.jk, false) ? '' : 'none';
+  写入开关值('pvl', 配置.pvl, false);
+  写入字段值('pvlURL', 配置.pvlURL);
+  写入字段值('pvlmin', 配置.pvlmin);
+  写入字段值('pvlmax', 配置.pvlmax);
+  写入字段值('pvllimit', 配置.pvllimit);
+  写入字段值('pvlcountry', 配置.pvlcountry);
+  写入字段值('pvlproto', 配置.pvlproto);
+  写入开关值('pvlraw', 配置.pvlraw, true);
+  const 公共开关 = 是否开关启用(配置.pvl, false);
+  for (const 标识 of ['pvlClientBtn', 'pvlUriClientBtn']) {
+    const 按钮 = document.getElementById(标识);
+    if (按钮) 按钮.style.display = 公共开关 ? '' : 'none';
+  }
   写入开关值('epd', 配置.epd, true);
   写入开关值('epi', 配置.epi, true);
   写入开关值('egi', 配置.egi, true);
@@ -6721,6 +7392,14 @@ function 收集界面配置() {
     scu: 读取字段值('scu'),
     ena: 读取开关值('ena', false),
     jk: 读取开关值('jk', false),
+    pvl: 读取开关值('pvl', false),
+    pvlURL: 读取字段值('pvlURL'),
+    pvlmin: 读取字段值('pvlmin'),
+    pvlmax: 读取字段值('pvlmax'),
+    pvllimit: 读取字段值('pvllimit'),
+    pvlcountry: 读取字段值('pvlcountry'),
+    pvlproto: 读取字段值('pvlproto'),
+    pvlraw: 读取开关值('pvlraw', true),
     epd: 读取开关值('epd', true),
     epi: 读取开关值('epi', true),
     egi: 读取开关值('egi', true),
@@ -9127,6 +9806,14 @@ function 更新配置值() {
   启用仓库优选 = 有效配置.egi === 'yes';
   启用原生地址 = 有效配置.ena === 'yes';
   启用家宽链式 = 有效配置.jk === 'yes';
+  启用公共节点 = 有效配置.pvl === 'yes';
+  公共节点清单网址 = 有效配置.pvlURL || '';
+  公共节点最低速度 = 公共节点解析数字(有效配置.pvlmin, 0);
+  公共节点最高延迟 = 公共节点解析数字(有效配置.pvlmax, 0);
+  公共节点取数上限 = 公共节点解析数字(有效配置.pvllimit, 120) || 120;
+  公共节点国家过滤 = 公共节点解析列表(有效配置.pvlcountry);
+  公共节点只取协议 = 公共节点解析列表(有效配置.pvlproto);
+  公共节点要原文 = 是否开启值(有效配置.pvlraw, true);
   启用加密客户端问候 = 有效配置.ech === 'yes';
   自定义域名系统 = 有效配置.customDNS || 配置默认值.customDNS;
   自定义加密客户端问候域名 = 有效配置.customECHDomain || 配置默认值.customECHDomain;

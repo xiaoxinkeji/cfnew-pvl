@@ -9,6 +9,19 @@ Companion documents: [README.md](README.md), [README-PVL.md](README-PVL.md), [do
 
 **单文件静态二进制，零第三方依赖**（只用 Go 标准库），拷到目标机器直接跑，不用装 Go、不用装 Python。
 
+### 这块的定位
+
+它是**独立于 Worker 的一块**：不需要部署 Cloudflare Worker，也不依赖 CF 节点。
+目标是「家宽节点自动进面板」——灌进去之后按间隔持续同步，掉线的自动换掉。
+
+与另外两块的关系：
+
+| 想要什么 | 用哪块 |
+| --- | --- |
+| 订阅链接 + 管理面板 | 主 Worker，见 [README.md](README.md) |
+| 公共节点直出订阅 | [README-PVL.md](README-PVL.md) |
+| 家宽节点自动进 3x-ui 面板 | 本文件 |
+
 > 相关文档：主说明见 [README.md](README.md)，另一个新增功能是
 > [公共节点订阅（PublicVPNList）](README-PVL.md)，架构与模块划分见
 > [docs/architecture.md](docs/architecture.md)，出问题先看

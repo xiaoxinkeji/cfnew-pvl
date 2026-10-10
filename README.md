@@ -1,9 +1,16 @@
-# CFnew - 终端 v3.1
+# cfnew-pvl
 
-Use this skill when generating Cloudflare Worker subscriptions automatically, when configuring proxy clients, when deploying to Cloudflare Pages or Workers, or when migrating from another subscription generator. Use proactively for listing environment variables, for mapping workload targets, and for debugging 403 and 503 responses.
+基于 [byJoey/cfnew](https://github.com/byJoey/cfnew) v3.1 改造。**上游是 Cloudflare Worker 订阅生成器，这个 fork 的重点是把它换成不需要自建服务器的节点获取方式，并补上落地到 3x-ui 的工具链。**
 
-See also [README-PVL.md](README-PVL.md) for PublicVPNList nodes and [README-3XUI.md](README-3XUI.md) for 3x-ui sync.
+现在仓库里有三块相对独立的东西：
 
+| | 是什么 | 用在哪 |
+| --- | --- | --- |
+| **Worker 订阅**（上游 v3.1 原样保留） | 一个 Cloudflare Worker / Pages 脚本，产出 Clash / sing-box 订阅 | 部署到 CF，喂给客户端 |
+| **PublicVPNList 公共节点** | 直接吃第三方实测清单，不用自己搭服务器、不用 CF 前置 | Worker 的 `pvl` / `pvluri` / `pvlsb` 三个 target |
+| **`homesync`**（Go 写的） | 把家宽节点灌进 3x-ui 面板并持续同步，掉线自动换 | 有 root 的 Linux 服务器，配 3x-ui 用 |
+
+三块可以单独用，也可以一起用。
 
 > **⚠️ 重要：部署后请将兼容日期设置为 `2026-01-20`**
 >
@@ -23,6 +30,38 @@ See also [README-PVL.md](README-PVL.md) for PublicVPNList nodes and [README-3XUI
 **语言:** [中文](README.md) | [فارسی](فارسی.md)
 
 
+### 一句话说清边界
+
+它是**订阅生成器**，不是代理本身，不转发你的流量。节点是 PublicVPNList 上公开实测的
+第三方端点，质量不由本项目保证 —— 所以文档里持续如实记录已知限制（比如 hysteria2
+活跃配置偏少、源站接口会变）。
+
+### 现在的状态，先说清楚
+
+**PublicVPNList 的列表接口必须带一个请求头。** 不加 `X-Requested-With: XMLHttpRequest` 就返回：
+
+```
+403 {"ok":false,"error":"Dataset is available through site pages only."}
+```
+
+它靠这个头区分「网页在拉」和「有人在爬 API」。另外两个坑：不能声明
+`Accept-Encoding: identity`（明文响应会被截断成半个 JSON），响应末尾也常是半个对象，
+解析必须容忍截断。
+
+**目前能拿到清单，但下载 `.ovpn` 配置的入口还没打通** —— 旧接口
+`/protocols/download.php` 现在返回 400，新的走 `/download/?token=xxx`，
+而那个 token 不在列表数据里。也就是说：**有约 3900 个节点的清单
+（带真实测速和 ping），但还没有能直接连的 OpenVPN 出口。**
+
+要真连上 OpenVPN 节点，目前用
+[fork 出去的 fanout](https://github.com/xiaoxinkeji/fanout)：它走 VPN Gate 源，
+开出口的完整链路是通的（实测过日本出口，出口 IP 确实变了）。
+
+各块状态：
+
+- Worker 订阅（v3.1）：照常可用，见下面各节
+- `homesync`：**实测可用**，能自动探测本机 3x-ui、开出口、定时同步、掉线自动换
+
 **文档导航**
 
 | 想找什么 | 去哪 |
@@ -32,6 +71,7 @@ See also [README-PVL.md](README-PVL.md) for PublicVPNList nodes and [README-3XUI
 | 家宽节点同步到 3x-ui 面板 | [README-3XUI.md](README-3XUI.md) |
 | 模块划分、数据流、怎么加新订阅格式 | [docs/architecture.md](docs/architecture.md) |
 | 出错了（403 / 503 / 导入失败 / CI 失败） | [docs/troubleshooting.md](docs/troubleshooting.md) |
+| Agent 协作约定（issue tracker / 标签 / 域文档） | [docs/agents/](docs/agents/) |
 
 ## 输出格式与入参
 
@@ -84,10 +124,14 @@ wrangler secret put PVL               # yes 打开公共节点
 [docs/troubleshooting.md](docs/troubleshooting.md)。
 
 - 公共节点全部来自第三方站点，可用性由对方决定，本项目只负责搬运与转换
+- **PublicVPNList 的列表接口需要 `X-Requested-With: XMLHttpRequest`**，缺了就是 403；
+  响应还可能末尾截断，解析要容忍（详见上文「现在的状态」）
+- **`.ovpn` 下载入口目前打不通**：清单拿得到，但配下不来，所以还没有能直接连的
+  OpenVPN 出口。要连上请用 [fanout](https://github.com/xiaoxinkeji/fanout)
 - OpenVPN 没有通用 URI scheme，所以 `pvluri` 与 `pvlsb` 刻意不带这类节点
 - sing-box 没有 openvpn 出站类型，`pvlsb` 同理
 - hysteria2 在公共数据源里活跃配置偏少（约 24 条），成功率低于 vless / trojan
-- `get_token.php` 有限流，短时间大量请求会返回 403
+- 列表接口一次要吐 2 分多钟（约 2MB gzip），别指望它快 —— 客户端要缓存
 
 ## 主要功能
 
@@ -227,6 +271,22 @@ hs          # 装完打开管理菜单
 ```
 
 单文件静态二进制、零第三方依赖，会自动探测本机 3x-ui（读端口/basePath/token）。
+
+两种跑法，装的时候选：
+
+| 模式 | 干什么 | 适合 |
+| --- | --- | --- |
+| `xray`（默认） | 只同步多协议节点（vless/trojan/ss/vmess），面板里直接建 inbound | 开箱即用，大多数情况 |
+| `ovpn` | OpenVPN 连家宽 → tun0 → dokodemo-door inbound | 真正要 OpenVPN 落地，需 root + openvpn |
+
+另外它能自己起一个**聚合订阅**服务（`-mode sub`）：3x-ui 的订阅是按客户端的，
+一个 `subId` 只返回自己的那条链接，没有聚合端点 —— 所以这个模式把所有出口
+合成一个订阅地址，直接喂给 Clash / mihomo。
+
+> 如果你主要想把 OpenVPN 家宽当出口用，也可以看
+> [fanout](https://github.com/xiaoxinkeji/fanout)：每个出口一个 netns +
+> 一个本地 SOCKS5 端口，开出口的链路是通的。
+
 完整说明见 [README-3XUI.md](README-3XUI.md)。
 
 ## 部署

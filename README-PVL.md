@@ -12,6 +12,35 @@ Related documents: [README.md](README.md), [README-3XUI.md](README-3XUI.md), [do
 
 这一版换了思路：**直接吃 PublicVPNList 的全量实测清单**。那边按小时对几万个第三方端点跑真实隧道检测（握手、HTTPS 首字节、下载吞吐、出口 IP 变化），我们通过它的两个公开接口把节点全量扒下来，原样直出订阅 —— **不需要自己搭服务器，也不需要 CF 前置**。
 
+### 这块的定位
+
+它是主 Worker 的**一个订阅目标**，不是独立项目 —— 部署同一个 Worker，用 `?target=pvl`
+这一组参数就能拿到公共节点。三种用法：
+
+| 用法 | 适合谁 |
+| --- | --- |
+| 部署 Worker，用 `pvl` / `pvluri` / `pvlsb` 订阅 | 想长期用、要管理面板 |
+| 本地跑 `tools/fetch_publicvpnlist.py` | 只想拿一次节点文件，不部署 |
+| 家宽节点灌进 3x-ui | 见 [README-3XUI.md](README-3XUI.md) |
+
+**覆盖的协议**：OpenVPN、VLESS、Trojan、VMess、Shadowsocks、Hysteria2。
+**国家映射** 54 条，单一真源在 `docs/country-codes.json`。
+
+### 已知边界（会持续如实更新）
+
+- **hysteria2 活跃配置偏少** —— 实测约 24 条，成功率约 29%，这是上游数据现状，不是抓取失败
+- **接口入口变了，坑在请求头**：列表接口必须带 `X-Requested-With: XMLHttpRequest`，
+  否则返回 `403 {"ok":false,"error":"Dataset is available through site pages only."}`。
+  另外不能要明文编码（`identity` 会把响应截断成半个 JSON），响应末尾也常是半个
+  对象，解析必须容忍截断
+- **`.ovpn` 下载入口目前打不通**：旧接口 `/protocols/download.php` 返回 400，
+  新的走 `/download/?token=xxx`，token 不在清单数据里。所以现在**只有清单、
+  没有能直接连的 OpenVPN 出口**。这部分在
+  [fanout](https://github.com/xiaoxinkeji/fanout) 里是通的（走 VPN Gate 源）
+- 列表接口**一次要 2 分多钟**（约 2MB gzip），务必缓存，别每次请求都重拉
+- **OpenVPN 没有业界通用的 URI scheme**，sing-box 内核也没有 openvpn 出站类型 ——
+  所以 `pvl` 带 OpenVPN 而 `pvluri` / `pvlsb` 刻意不带，这是设计不是遗漏
+
 ---
 
 ## 输出格式与入参
@@ -49,10 +78,17 @@ OpenVPN 那列为什么不一致：Clash Meta 1.19.25+ 有 `openvpn` proxy 类�
 **OpenVPN** —— 一次请求拿全量清单，再逐条换配置原文：
 
 ```text
-GET  /local/api/vpn-data.php?status=all     → 45,722 行全量清单（约 33 MB，3,874 个实测在线）
-POST /get_token.php         {id}            → 300 秒有效的下载令牌
-GET  /download.php?token=…                  → .ovpn 配置原文
+GET /local/api/vpn-data.php?status=all   → 约 24,000 行全量（实测可用约 3,900 个）
+    必须带 X-Requested-With: XMLHttpRequest，否则 403
+    不能声明 Accept-Encoding: identity（明文会被截断成半个 JSON）
+    响应末尾常是半个对象，解析要容忍截断
+    一次约 2 分钟（2MB gzip），务必缓存
 ```
+
+> **`.ovpn` 下载这条目前走不通。** 旧接口 `/protocols/download.php` 返回 400，
+> 新的走 `/download/?token=xxx`，而 token 不在清单数据里。所以现状是
+> **有清单、没有能直接连的 OpenVPN 出口**。要连上请用
+> [fanout](https://github.com/xiaoxinkeji/fanout)。
 
 **多协议**（VLESS / Trojan / VMess / Shadowsocks / Hysteria2）—— 翻列表页拿稳定 ID，再直接取 share URI：
 
@@ -177,7 +213,8 @@ node tools/test_pvl.mjs
 - **节点是第三方共享的**。`pvl/sub/all.txt` 里那条会被反复扫描，掉线、限速、改端口是常态。自动回落组会往下换。
 - **OpenVPN 节点需要 Clash Meta / mihomo 1.19.25 以上内核**，老内核不认 `openvpn` 这个 proxy 类型。VLESS / Trojan / SS / VMess / Hysteria2 任意内核都能用。
 - **PublicVPNList 只做技术检测**（能否建隧道、出口 IP 是否变化、吞吐和延迟），不验证运营者身份、日志策略或司法管辖。别拿公共端点跑敏感账号。
-- **限流真实存在**：清单约 33 MB，令牌接口高频会 403。应对方式与排查步骤统一写在
+- **抓取接口的请求头是硬要求**：缺 `X-Requested-With: XMLHttpRequest` 就是 403。
+  清单一次要拉 2 分多钟，务必缓存。应对方式与排查步骤统一写在
   [docs/troubleshooting.md](docs/troubleshooting.md)，这里不重复展开。
 - 多协议接口返回的是**检测通过**的配置，实测成功率约 90%（hysteria2 偏低，活跃配置少）。拿不到的会被静默跳过。
 

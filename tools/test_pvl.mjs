@@ -214,9 +214,48 @@ const 有Tab = /\t/.test(订阅);
 console.log('\n[6] 纯 URI 订阅');
 const 链接列表 = await 模块.生成公共节点链接列表();
 断言('协议 URI 原样输出', 链接列表.some(l => l.startsWith('vless://')), JSON.stringify(链接列表.slice(0, 2)));
-断言('OpenVPN 走 ovpn:// 内联', 链接列表.some(l => l.startsWith('ovpn://')));
-断言('ovpn:// 带 remote 原文', 链接列表.some(l => l.includes('106.136.100.245') || l.includes('remote%20')),
-  JSON.stringify(链接列表.filter(l => l.startsWith('ovpn://'))[0] || '').slice(0, 120));
+// ovpn:// 是自造 scheme，没有任何客户端认得，必须不再出现
+断言('不再出自造的 ovpn:// scheme', !链接列表.some(l => l.startsWith('ovpn://')),
+  JSON.stringify(链接列表.filter(l => l.startsWith('ovpn://'))[0] || ''));
+断言('只出客户端能导入的协议', 链接列表.every(l =>
+  /^(vless|trojan|vmess|ss|hysteria2):\/\//.test(l) || l.startsWith('#')),
+  JSON.stringify(链接列表.filter(l => !/^(vless|trojan|vmess|ss|hysteria2):\/\//.test(l) && !l.startsWith('#'))));
+
+// ---------------------------------------------------------------- 6b. sing-box 订阅
+console.log('\n[6b] sing-box 订阅');
+const 盒子订阅 = await 模块.生成公共节点盒子订阅();
+let 盒子对象 = null;
+try { 盒子对象 = JSON.parse(盒子订阅); } catch (错误) { /* 下面断言会报出来 */ }
+断言('是合法 JSON', 盒子对象 !== null);
+if (盒子对象) {
+  const 出站 = 盒子对象.outbounds || [];
+  断言('含 urltest 自动组', 出站.some(o => o.type === 'urltest' && o.tag === 'auto'));
+  断言('含 selector 选择组', 出站.some(o => o.type === 'selector' && o.tag === 'select'));
+  断言('含 direct 出站', 出站.some(o => o.type === 'direct'));
+  const 协议的 = 出站.filter(o => ['vless', 'trojan', 'vmess', 'shadowsocks', 'hysteria2'].includes(o.type));
+  断言('五种协议都有出站', 协议的.length >= 5, String(协议的.length));
+  const vless出站 = 出站.find(o => o.type === 'vless');
+  断言('VLESS REALITY 公钥', vless出站 && vless出站.tls && vless出站.tls.reality &&
+    vless出站.tls.reality.public_key === 'e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg');
+  断言('VLESS flow', vless出站 && vless出站.flow === 'xtls-rprx-vision');
+  断言('不出 openvpn 类型（sing-box 无此出站）', !出站.some(o => o.type === 'openvpn'));
+  断言('tag 不重复', new Set(出站.map(o => o.tag)).size === 出站.length);
+  const hy出站 = 出站.find(o => o.type === 'hysteria2');
+  断言('Hysteria2 insecure 布尔归一', hy出站 && hy出站.tls && hy出站.tls.insecure === true,
+    JSON.stringify(hy出站));
+  console.log('     ── 出站样例 ──');
+  console.log('        ' + JSON.stringify(出站.find(o => o.type === 'vless')));
+}
+
+// ---------------------------------------------------------------- 6c. 凭据解析
+console.log('\n[6c] OpenVPN 凭据解析');
+const 带凭据 = 真实配置 + 'auth-user-pass\n';
+const 带内联凭据 = 真实配置 + 'auth-user-pass myuser mypass\n';
+断言('无凭据时退回 vpn/vpn',
+  (() => { const r = 模块.公共节点解析原文(带凭据); return r.用户名 === 'vpn' && r.密码 === 'vpn'; })());
+断言('内联凭据被读出',
+  (() => { const r = 模块.公共节点解析原文(带内联凭据); return r.用户名 === 'myuser' && r.密码 === 'mypass'; })(),
+  JSON.stringify(模块.公共节点解析原文(带内联凭据)));
 
 // ---------------------------------------------------------------- 7. 异常输入
 console.log('\n[7] 异常输入不崩');

@@ -14,4 +14,11 @@ node_modules/
 
 # 3x-ui 同步器：面板地址 + API token，绝不能提交
 tools/config.json
+cmd/homesync/config.json
+cmd/homesync/.sync_state.json
 tools/.sync_state.json
+
+# Go 构建产物
+dist/
+homesync
+homesync.exe

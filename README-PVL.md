@@ -135,6 +135,20 @@ node tools/test_pvl.mjs
 
 ---
 
+
+## 配套：3x-ui 面板同步
+
+想把家宽节点直接灌进 3x-ui 面板（自动建 inbound、定时同步、挂了自动换节点），
+用 Go 写的 `cmd/homesync`，见 [README-3XUI.md](README-3XUI.md)。
+
+```
+./homesync -mode xray -limit 30          # 多协议家宽节点，开箱即用
+sudo ./homesync -mode ovpn -country japan,usa   # OpenVPN 家宽落地，需 root
+```
+
+注意：3x-ui 的 inbound 协议白名单里没有 `openvpn`（它是 xray-core 面板），
+所以 OpenVPN 落地要走 tun 网卡 + tunnel inbound，README-3XUI.md 里讲清楚了。
+
 ## 部署
 
 - **Pages**：上传 `明文源吗` 重命名为 `_worker.js`，或用 Release 里的 `Pages.zip`

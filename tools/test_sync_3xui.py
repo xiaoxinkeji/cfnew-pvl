@@ -251,4 +251,8 @@ check('保留 ca 块', 'BEGIN CERTIFICATE' in body)
 
 print('\n──────────────────────────────')
 print('通过 %d / 失败 %d' % (PASS, FAIL))
-sys.exit(1 if FAIL else 0)
+
+# 直接跑（python3 test_sync_3xui.py）时用退出码表达成败；
+# 被 pytest 收集时不能 sys.exit——那会在 import 阶段抛 SystemExit 导致 INTERNALERROR。
+if __name__ == '__main__':
+    sys.exit(1 if FAIL else 0)

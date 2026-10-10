@@ -193,6 +193,14 @@
 | `rm` | no | 可选，设为`no`关闭地区智能匹配 |
 | `ae` | yes | 可选，设为`yes`允许API管理（默认关闭） |
 | `jk` | yes/no | 可选，开启家宽链式（默认关闭），图形化里也能勾。见「[家宽链式](#家宽链式)」 |
+| `pvl` | yes/no | 可选，启用公共节点 PublicVPNList（默认关闭）。见「[公共节点](#公共节点publicvpnlist--不用自己搭服务器)」 |
+| `pvlURL` | 清单地址 | 可选，留空用官方接口，可换成自己的镜像 |
+| `pvlmin` | 数字 | 可选，OpenVPN 最低实测速度（Mbps），低于此值剔除 |
+| `pvlmax` | 数字 | 可选，OpenVPN 最高实测延迟（ms），高于此值剔除 |
+| `pvllimit` | 数字 | 可选，每种协议最多取多少个（默认 120） |
+| `pvlcountry` | 逗号分隔 | 可选，只留这些国家，如 `japan,south-korea,usa` |
+| `pvlproto` | 逗号分隔 | 可选，只取这些协议，如 `openvpn,vless,trojan` |
+| `pvlraw` | yes/no | 可选，是否抓取 OpenVPN 原文配置（默认开启） |
 
 ### 家宽链式
 
@@ -232,6 +240,28 @@ https://你的域名/{UUID}?target=vg
 - 只走 TCP，UDP 走不了前置，节点上写的是 `udp: false`。
 - 节点源拉不到时订阅返回 503，客户端会继续用上一份，不会被空配置覆盖。
 - 速度看对方家里的上传，别指望跑满。要稳定高速还是用正常节点。
+
+#### 公共节点（PublicVPNList —— 不用自己搭服务器）
+
+想直接吃 PublicVPNList 的全量实测节点、不套 CF 前置的，用这个：
+
+```
+https://你的域名/{UUID}/sub?target=pvl      # Clash / Mihomo YAML
+https://你的域名/{UUID}/sub?target=pvluri   # 纯 share URI 文本
+https://你的域名/{UUID}/sub?target=pvlsb    # sing-box JSON
+```
+
+**开启**：配置管理里勾上「启用公共节点（PublicVPNList）」（或环境变量 `pvl=yes`），
+客户端列表会多出「CLASH 公共」和「公共连接」两个按钮。没开时这三个地址返回 403。
+
+跟上面家宽链式的区别：**不做链式**，节点原样直出，出口就是节点自己的 IP，
+不需要 CF 前置，也不需要自己有服务器。能按实测速度、延迟、国家和协议细调。
+
+完整说明见 [README-PVL.md](README-PVL.md)。
+
+#### 家宽节点同步到 3x-ui 面板
+
+想把家宽落地节点灌进 3x-ui 面板自动管理的，见 [README-3XUI.md](README-3XUI.md)。
 
 #### KV存储设置（推荐）
 

@@ -15,7 +15,7 @@
 
 **3x-ui 自己不能当 OpenVPN 客户端。** 它是 xray-core 的管理面板，inbound 协议白名单在源码 `internal/database/model/model.go` 里写死：
 
-```
+```text
 vmess vless trojan shadowsocks wireguard hysteria http
 mixed tunnel tun mtproto amneziawg tuic
 ```
@@ -26,7 +26,7 @@ mixed tunnel tun mtproto amneziawg tuic
 
 ### 路线 A —— 真·家宽出口（需要 root + openvpn）
 
-```
+```text
 PublicVPNList 家宽节点
     │  openvpn 客户端（本机）
     ▼
@@ -184,6 +184,7 @@ sudo ./homesync -mode xray -daemon 1800
 | `-ovpn-bin` | openvpn 可执行文件名，默认 `openvpn` |
 | `-workers` | 抓取并发数，默认 8（太高会被源站限流） |
 | `-refresh` | 忽略清单缓存重拉 |
+| `-skip-probe` | 跳过节点连通性探测（更快，但可能塞进连不上的节点） |
 | `-insecure` | 忽略面板 HTTPS 证书校验（自签证书用） |
 | `-dry-run` | 只抓取和解析，不碰面板 |
 | `-clean` | 删掉本工具建的 inbound 后退出 |
@@ -237,9 +238,15 @@ PublicVPNList 给的是 share URI，3x-ui 要的是 `settings` / `streamSettings
 ## 测试
 
 ```bash
-go test ./...                      # 29 项单元测试（不联网）
-go test -tags=e2e ./...            # 端到端：起模拟面板跑完整同步（需联网抓 PublicVPNList）
+go test ./...            # 57 项单元测试（不联网）
+go test -tags=e2e ./...  # 端到端：起模拟面板跑完整同步
 ```
+
+**e2e 不强制依赖外网**：链路正确性由 `TestSyncXray_OfflineStub` 用本地桩保证
+（注入固定 share URI，验证去重、端口避让、建 inbound、重启）。真抓 PublicVPNList
+的那几个会先做 8 秒探活，源站不可达就跳过——**源站限流不该让 CI 变红**，
+这也是实测踩到的：TLS handshake timeout 曾让整套 e2e 挂红 30 分钟。
+CI 里要强制联网跑，设 `HOMESYNC_E2E_REQUIRE_NET=1`。
 
 单元测试覆盖：10 类 URI 解析、9 类坏输入、REALITY/TLS 参数落位、协议白名单与源码逐项比对、inbound 载荷字段、`.ovpn` 解析、配置文件指令剔除、国家/速度过滤、面板响应语义（含 success:false 的 200）、**只清理自建 inbound** 的安全边界。
 
@@ -249,7 +256,7 @@ go test -tags=e2e ./...            # 端到端：起模拟面板跑完整同步�
 
 ## 代码结构
 
-```
+```text
 cmd/homesync/
   main.go         CLI + 两条同步路线 + settings.json 读取
   panel.go        3x-ui API 客户端（Bearer、success 语义、只清理自建）
@@ -270,7 +277,8 @@ hs.sh             管理菜单（交互 + 命令行双模）
 
 - **路线 A 要 root**。要建 tun 设备、跑 openvpn。没有 root 就走 `-mode xray`。
 - **`tunnel` inbound 只是把流量导进 tun**，xray 那边还得配一条走 tun 的出站才能真正出去。本工具建 inbound + 验证 tun 起来了，出站路由按你自己的 xray 配置来。
-- **PublicVPNList 限流真实存在**。令牌接口高频会 403，抓取器有退避重试；清单（33 MB）落本地缓存，1 小时内复用。
+- **PublicVPNList 限流真实存在**：令牌接口高频会 403，抓取器有退避重试。
+  排查步骤见 [docs/troubleshooting.md](docs/troubleshooting.md)。
 - **节点是第三方共享的**，掉线常态。`-daemon` 模式会体检并自动换节点。
 - **别把 `config.json` 提交上去**。已加 `.gitignore`，工具启动时会检查权限并警告。
 - **面板会保留未被占用的 tag**。核对过 `resolveInboundTag`：提交的 tag 若没被别的人
@@ -278,3 +286,10 @@ hs.sh             管理菜单（交互 + 命令行双模）
   那时清理会漏——`hs list` 里看 `*` 标记能发现。
 - **vmess 字段类型不统一**。实测各家生成器的 `aid` / `port` 有时是字符串、有时是数字，
   所以解析层用 `interface{}` 兜住再转，不用固定类型（否则会 unmarshal 失败丢节点）。
+- **建节点前会 TCP 探测一次**。第三方共享节点掉线是常态，不验证就全塞进面板，
+  用户拿到的是一批连不上的节点。只做握手不做协议层（那要各协议各实现一套）。
+  嫌慢可以 `-skip-probe`，代价是可能塞进死节点。
+- **端口避开已占用的**。面板端口唯一，撞了会拒绝（且失败还是 200），
+  所以建之前先拉一次已占用端口表。
+- **`tun` 有 IP 不等于隧道通**。路线 A 的体委会真探一次出口 IP；
+  只看网卡有没有地址的话，对端掐了连接你看到的是「一切正常」但流量不出去。

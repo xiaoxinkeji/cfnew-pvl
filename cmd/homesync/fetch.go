@@ -33,6 +33,9 @@ const (
 	tokenAPI      = publicVPNList + "/get_token.php"
 	downloadAPI   = publicVPNList + "/download.php"
 	protoAPI      = publicVPNList + "/protocols/download.php"
+	// minReqGap 是两次请求之间的最小间隔。源站会限流（403），
+	// 并发拉配置时靠它把实际 QPS 压住。
+	minReqGap = 200 * time.Millisecond
 )
 
 // ProtocolPages PublicVPNList 的列表页就是协议名小写。
@@ -63,11 +66,19 @@ func NewHarvester(cacheDir string) (*Harvester, error) {
 }
 
 // throttle 简单的串行节流，避免把源站打挂。
+// throttle 串行化请求间隔。
+//
+// 原来的写法是「看距上次多久，不够就补睡」——8 个 worker 并发时全都读到
+// 同一个 lastHit，然后一起睡同一个时长，醒来还是一起发，节流等于没有。
+// 改成：持锁算出要睡多久，睡完再更新 lastHit，这样后一个 goroutine
+// 看到的是前一个真的发完的时间点，间隔才成立。
 func (h *Harvester) throttle() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if d := time.Since(h.lastHit); d < 200*time.Millisecond {
-		time.Sleep(200*time.Millisecond - d)
+	if !h.lastHit.IsZero() {
+		if d := time.Since(h.lastHit); d < minReqGap {
+			time.Sleep(minReqGap - d)
+		}
 	}
 	h.lastHit = time.Now()
 }

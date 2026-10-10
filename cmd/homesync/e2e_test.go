@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // mockPanel 模拟 3x-ui 的关键行为：Bearer 校验、success 语义、按 tag 存储。
@@ -105,7 +106,104 @@ func atoiTail(path string) int {
 	return n
 }
 
+// stubHarvester 本地抓取桩：返回固定的 share URI，完全不碰外网。
+//
+// 为什么需要它：真抓 PublicVPNList 的 e2e 依赖外网，源站一限流/抽风测试就飘
+// （实测踩到：TLS handshake timeout、dial timeout 都让 CI 变红）。
+// 链路本身的正确性不该由源站的可用性决定，所以拆一个不联网的版本出来。
+type stubHarvester struct {
+	uris []ProtoNode
+}
+
+func (s *stubHarvester) FetchProtocol(proto string, limit, pages, workers int) ([]ProtoNode, error) {
+	var out []ProtoNode
+	for _, n := range s.uris {
+		if n.Protocol == proto {
+			out = append(out, n)
+		}
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *stubHarvester) FetchCatalog(refresh bool) ([]VPNRow, error) { return nil, nil }
+func (s *stubHarvester) FetchOvpn(id, tries int) (string, error)     { return "", nil }
+
+// 用桩跑完整同步：这条必须每次都过，不受源站影响
+func TestSyncXray_OfflineStub(t *testing.T) {
+	m := &mockPanel{inbounds: map[int]*Inbound{}, tok: "secret"}
+	srv := httptest.NewServer(m.handler(t))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	c := &config{
+		mode: "xray", url: srv.URL, token: "secret", limit: 10,
+		protos: "vless,trojan", portStart: 20000, workers: 2,
+		cacheDir: dir, statePath: dir + "/state.json",
+		skipProbe: true, // 桩里的地址不一定真存在，跳过连通性探测
+	}
+	stub := &stubHarvester{uris: []ProtoNode{
+		{Protocol: "vless", ID: "a", URI: "vless://814bd064-544d-4255-a070-5705c03f6da9@1.2.3.4:443?security=tls&sni=a.com"},
+		{Protocol: "vless", ID: "b", URI: "vless://814bd064-544d-4255-a070-5705c03f6da9@5.6.7.8:443?security=tls&sni=b.com"},
+		// 故意放一条重复的，验证去重
+		{Protocol: "vless", ID: "a2", URI: "vless://814bd064-544d-4255-a070-5705c03f6da9@1.2.3.4:443?security=tls&sni=a.com"},
+		{Protocol: "trojan", ID: "c", URI: "trojan://pw@9.9.9.9:443?security=tls&sni=c.com"},
+	}}
+	pc := newPanelClient(c)
+	st := LoadState(c.statePath)
+	if err := syncXrayWith(stub, pc, c, st); err != nil {
+		t.Fatalf("同步失败: %v", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.inbounds) != 3 {
+		t.Fatalf("应建 3 个（4 条里去重掉 1 条），实际 %d", len(m.inbounds))
+	}
+	// 端口不能重复（去重 + 端口避让都要生效）
+	ports := map[int]bool{}
+	for id, in := range m.inbounds {
+		if ports[in.Port] {
+			t.Errorf("端口 %d 重复（id=%d）", in.Port, id)
+		}
+		ports[in.Port] = true
+		if !strings.HasPrefix(in.Tag, ManagedPrefix) {
+			t.Errorf("id=%d tag 缺前缀: %s", id, in.Tag)
+		}
+	}
+	if !m.restarted {
+		t.Error("没重启 xray")
+	}
+}
+
+// skipIfSourceDown 源站不可达时跳过测试。
+//
+// 这些 e2e 要真抓 PublicVPNList，源站限流/抽风就会挂。
+// 那不是代码的问题——链路正确性由 TestSyncXray_OfflineStub 用桩保证，
+// 这里只在源站可用时验证真实数据能走通。
+func skipIfSourceDown(t *testing.T) {
+	t.Helper()
+	if os.Getenv("HOMESYNC_E2E_REQUIRE_NET") == "1" {
+		return // CI 显式要求联网时才强制跑
+	}
+	// 先用一次裸的 HTTP 探活，超时给短点。
+	// 不能直接用 FetchProtocol 探：它内部的重试和 30s 超时会让「源站挂了」
+	// 变成每个测试各等 60 秒，整套 e2e 慢得没法用。
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(publicVPNList + "/vless/?per_page=100")
+	if err != nil {
+		t.Skipf("PublicVPNList 不可达，跳过联网 e2e: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		t.Skipf("PublicVPNList 返回 %d，跳过联网 e2e", resp.StatusCode)
+	}
+}
+
 func TestEndToEnd_SyncXray(t *testing.T) {
+	skipIfSourceDown(t)
 	m := &mockPanel{inbounds: map[int]*Inbound{}, tok: "secret"}
 	srv := httptest.NewServer(m.handler(t))
 	defer srv.Close()
@@ -163,6 +261,7 @@ func TestEndToEnd_SyncXray(t *testing.T) {
 
 // 第二轮同步必须清掉上一轮的，不能无限堆积
 func TestEndToEnd_SyncTwiceDoesNotAccumulate(t *testing.T) {
+	skipIfSourceDown(t)
 	m := &mockPanel{inbounds: map[int]*Inbound{}, tok: "secret"}
 	srv := httptest.NewServer(m.handler(t))
 	defer srv.Close()
@@ -203,6 +302,7 @@ func countInbounds(m *mockPanel) int {
 
 // 清理必须只删自己建的
 func TestEndToEnd_CleanLeavesManualAlone(t *testing.T) {
+	skipIfSourceDown(t)
 	m := &mockPanel{inbounds: map[int]*Inbound{}, tok: "secret"}
 	// 预置一个手工建的
 	m.inbounds[99] = &Inbound{ID: 99, Tag: "my-own-vless", Protocol: "vless"}
@@ -241,6 +341,42 @@ func TestEndToEnd_CleanLeavesManualAlone(t *testing.T) {
 		if id != 99 {
 			t.Errorf("还残留自建 inbound id=%d", id)
 		}
+	}
+}
+
+// 源站抽风时不能崩，也不能把面板清空。
+// 这是 e2e 依赖外网的代价：源站一限流测试就飘。所以单独覆盖降级路径——
+// 就算抓不到节点，面板上原有的东西也必须原样留着。
+func TestEndToEnd_SourceDownKeepsPanel(t *testing.T) {
+	m := &mockPanel{inbounds: map[int]*Inbound{}, tok: "secret"}
+	// 预置一个手工建的，确认它不会被清掉
+	m.inbounds[99] = &Inbound{ID: 99, Tag: "my-own-vless", Protocol: "vless", Port: 20000}
+
+	srv := httptest.NewServer(m.handler(t))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	c := &config{
+		mode: "xray", url: srv.URL, token: "secret", limit: 1,
+		// 指向一个必然连不上的地址，模拟源站挂掉
+		protos:    "vless",
+		portStart: 20000, workers: 1,
+		cacheDir: dir, statePath: dir + "/state.json",
+	}
+	pc := newPanelClient(c)
+
+	// 抓不到时 syncXray 应当正常返回（不是 error），且不删任何东西。
+	// 用桩模拟「源站返回空」，避免真等 30 秒超时。
+	stub := &stubHarvester{uris: nil}
+	err := syncXrayWith(stub, pc, c, LoadState(c.statePath))
+	if err != nil {
+		t.Logf("空结果时返回 error（可接受，但不应 panic）: %v", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.inbounds[99]; !ok {
+		t.Error("源站挂掉时把手工建的 inbound 也清了 —— 这是数据丢失")
 	}
 }
 

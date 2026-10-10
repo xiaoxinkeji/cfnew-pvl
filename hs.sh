@@ -73,12 +73,43 @@ cfg_get() {
 cfg_set() {
   local key="$1" val="$2" f="$WORK_DIR/settings.json"
   [[ -f $f ]] || return 1
-  # 数字不加引号，字符串加引号
+
+  # 消毒：country 这类是用户自由输入的。带引号/反斜杠/斜杠会破坏 JSON，
+  # 更糟的是塞进 sed 表达式里会让整条替换命令报错（实测踩到）。
+  # 只留 slug 该有的字符，其它一律丢掉。
   if [[ $val =~ ^[0-9]+$ ]]; then
-    sed -i "s/\"${key}\"[[:space:]]*:[[:space:]]*[0-9]*/\"${key}\": ${val}/" "$f"
+    val=$(printf '%s' "$val" | tr -cd '0-9')
   else
-    sed -i "s/\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"${key}\": \"${val}\"/" "$f"
+    val=$(printf '%s' "$val" | tr -cd 'A-Za-z0-9,_-')
   fi
+
+  # 不用 sed 原地替换：值里只要带分隔符就会把表达式搞崩。
+  # 直接整份重写——字段就四个，用当前值兜底，丢了格式也比写坏强。
+  local cur_mode cur_limit cur_country cur_interval
+  cur_mode=$(cfg_get mode); cur_limit=$(cfg_get limit)
+  cur_country=$(cfg_get country); cur_interval=$(cfg_get interval)
+  [[ $cur_limit    == - ]] && cur_limit=20
+  [[ $cur_interval == - ]] && cur_interval=1800
+  [[ $cur_country  == - ]] && cur_country=""
+  [[ $cur_mode     == - ]] && cur_mode=xray
+
+  case "$key" in
+    mode)     cur_mode="$val" ;;
+    limit)    cur_limit="$val" ;;
+    country)  cur_country="$val" ;;
+    interval) cur_interval="$val" ;;
+    *) return 1 ;;
+  esac
+
+  cat > "$f" <<EOF
+{
+  "mode": "${cur_mode}",
+  "limit": ${cur_limit},
+  "country": "${cur_country}",
+  "interval": ${cur_interval}
+}
+EOF
+  chmod 600 "$f"
 }
 
 pause() { echo; read -rp "回车返回菜单..." _; }

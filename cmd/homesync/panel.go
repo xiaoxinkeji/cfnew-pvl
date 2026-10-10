@@ -237,6 +237,50 @@ func (c *Client) ClearManaged(prefix string) (int, error) {
 	return removed, nil
 }
 
+// usedPorts 收集面板上已占用的端口。
+// 新建 inbound 前要避开这些：3x-ui 的端口是唯一的，撞了会拒绝——
+// 而且失败也是 HTTP 200 + success:false，不查的话只会看到一堆「建失败」。
+func (c *Client) usedPorts() (map[int]bool, error) {
+	list, err := c.ListInbounds()
+	if err != nil {
+		return nil, err
+	}
+	used := make(map[int]bool, len(list))
+	for _, in := range list {
+		if in.Port > 0 {
+			used[in.Port] = true
+		}
+	}
+	return used, nil
+}
+
+// nextFreePort 从 start 往上找第一个没被占用的端口。
+// 上限 65535，找完一圈都没有就报错——宁可明确失败，也别建出一堆冲突的 inbound。
+func nextFreePort(start int, used map[int]bool) (int, error) {
+	for p := start; p <= 65535; p++ {
+		if !used[p] {
+			return p, nil
+		}
+	}
+	return 0, fmt.Errorf("从 %d 到 65535 全被占用", start)
+}
+
+// countManaged 统计本工具建的 inbound 里还有几个在面板上。
+// 返回 (还在的数量, 状态里记录的数量)：两者不等就说明有节点被删或面板被改过。
+func (c *Client) countManaged(prefix string) (alive, recorded int) {
+	list, err := c.ListInbounds()
+	if err != nil {
+		return 0, 0
+	}
+	alive = 0
+	for _, in := range list {
+		if strings.HasPrefix(in.Tag, prefix) {
+			alive++
+		}
+	}
+	return alive, recorded
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

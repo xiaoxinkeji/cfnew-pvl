@@ -214,6 +214,13 @@ func tunAddr(iface string) (string, bool) {
 	return "", false
 }
 
+// tunLocalAddr 取 tun 网卡的本地 IPv4 字符串，供出口探测绑定用。
+// 没有地址时返回空串（调用方退回不绑定）。
+func tunLocalAddr(iface string) string {
+	ip, ok := tunAddr(iface)
+	return map[bool]string{true: ip, false: ""}[ok]
+}
+
 // GatewayOf 由 tun 虚拟地址推出对端网关（通常是 .1）。
 // dokodemo-door 要把流量发到这个网关才会真的走隧道出去。
 func GatewayOf(tunIP string) string {

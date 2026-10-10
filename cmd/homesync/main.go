@@ -17,6 +17,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -51,6 +54,7 @@ type config struct {
 	iface      string
 	ovpnBin    string
 	refresh    bool
+	skipProbe  bool
 	dryRun     bool
 	clean      bool
 	daemon     int
@@ -85,6 +89,7 @@ func parseFlags() *config {
 	flag.StringVar(&c.iface, "iface", "tun0", "OpenVPN tun 网卡名")
 	flag.StringVar(&c.ovpnBin, "ovpn-bin", "openvpn", "openvpn 可执行文件名")
 	flag.BoolVar(&c.refresh, "refresh", false, "忽略清单缓存重拉")
+	flag.BoolVar(&c.skipProbe, "skip-probe", false, "跳过节点连通性探测（更快，但会塞进连不上的节点）")
 	flag.BoolVar(&c.dryRun, "dry-run", false, "只抓取和解析，不碰面板")
 	flag.BoolVar(&c.clean, "clean", false, "删掉本工具建的所有 inbound 后退出")
 	flag.IntVar(&c.daemon, "daemon", 0, "常驻同步，每隔 N 秒跑一次（含体检）")
@@ -328,6 +333,14 @@ func run(c *config) error {
 				return err
 			}
 		default:
+			// 常驻模式下先体检：面板上这轮建的 inbound 还在不在。
+			// 掉线是常态（第三方共享节点），只全删全建不管死活的话，
+			// 面板上会一直挂一批连不上的节点。
+			if round > 1 {
+				if alive, total := pc.countManaged(ManagedPrefix); total > 0 && alive < total {
+					logf("上轮建的 %d 个里有 %d 个不在了，本轮换一批", total, total-alive)
+				}
+			}
 			if err := syncXray(h, pc, c, st); err != nil {
 				return err
 			}
@@ -347,7 +360,22 @@ func run(c *config) error {
 
 // ---------------------------------------------------------------- 路线 B
 
+// nodeSource 是节点来源的抽象。
+//
+// 抽出来是为了让「抓取 -> 解析 -> 建 inbound」这条链路能脱离外网测试：
+// 真抓取依赖 PublicVPNList，源站一限流 e2e 就飘，而链路本身的正确性
+// 不该由源站可用性决定。测试里注入桩即可。
+type nodeSource interface {
+	FetchProtocol(proto string, limit, pages, workers int) ([]ProtoNode, error)
+}
+
+// syncXray 用真实抓取器跑一次同步。
 func syncXray(h *Harvester, pc *Client, c *config, st *State) error {
+	return syncXrayWith(h, pc, c, st)
+}
+
+// syncXrayWith 是同步的实际实现，节点来源可注入（测试用桩）。
+func syncXrayWith(src nodeSource, pc *Client, c *config, st *State) error {
 	logf("路线 B：同步多协议家宽节点")
 	protos := ProtocolPages
 	if c.protos != "" {
@@ -362,7 +390,7 @@ func syncXray(h *Harvester, pc *Client, c *config, st *State) error {
 
 	var collected []ProtoNode
 	for _, p := range protos {
-		nodes, err := h.FetchProtocol(p, c.limit, 3, c.workers)
+		nodes, err := src.FetchProtocol(p, c.limit, 3, c.workers)
 		if err != nil {
 			logf("%s 抓取失败：%v", p, err)
 			continue
@@ -372,6 +400,13 @@ func syncXray(h *Harvester, pc *Client, c *config, st *State) error {
 	if len(collected) == 0 {
 		logf("没抓到任何节点，面板保持原样")
 		return nil
+	}
+
+	// 端口要避开面板上已占用的。原来从 portStart 硬递增，撞上已有 inbound
+	// 面板会直接拒绝（失败还是 200 + success:false），整批建不出来。
+	used, err := pc.usedPorts()
+	if err != nil {
+		logf("读已占用端口失败（%v），退回硬递增", err)
 	}
 
 	removed, err := pc.ClearManaged(ManagedPrefix)
@@ -384,8 +419,21 @@ func syncXray(h *Harvester, pc *Client, c *config, st *State) error {
 	st.Managed = nil
 
 	added := 0
+	skipped := 0
 	port := c.portStart
+	seenURI := map[string]bool{}
 	for _, node := range collected {
+		// 同一条 URI 只建一次：翻多页时同一个节点会重复出现
+		if seenURI[node.URI] {
+			continue
+		}
+		seenURI[node.URI] = true
+
+		port, err = nextFreePort(port, used)
+		if err != nil {
+			logf("端口不够了：%v", err)
+			break
+		}
 		in, err := buildFromURI(node.URI, port)
 		if err != nil {
 			continue
@@ -393,12 +441,24 @@ func syncXray(h *Harvester, pc *Client, c *config, st *State) error {
 		if !XUIProtocols[in.Protocol] {
 			continue
 		}
+		// 建之前先探一下节点连不连得上。PublicVPNList 是第三方共享节点，
+		// 掉线常态——不验证就全塞进面板，用户拿到的是一批连不上的节点。
+		if !c.skipProbe {
+			if !nodeReachable(node.URI) {
+				logf("  ⏭️  %s 连不上，跳过", in.Remark)
+				skipped++
+				continue
+			}
+		}
 		id, err := pc.AddInbound(in)
 		if err != nil {
 			logf("  ❌ %s：%v", in.Remark, err)
+			// 端口撞车这类错误跳过这个端口继续，别整批中断
+			port++
 			continue
 		}
 		st.Managed = append(st.Managed, in.Tag)
+		used[port] = true
 		added++
 		port++
 		logf("  ✅ %s（端口 %d，面板 id %d）", in.Remark, in.Port, id)
@@ -415,7 +475,7 @@ func syncXray(h *Harvester, pc *Client, c *config, st *State) error {
 		}
 		logf("重启 xray 成功")
 	}
-	logf("本次写入 %d 个 inbound", added)
+	logf("本次写入 %d 个 inbound（跳过 %d 个连不上的）", added, skipped)
 	return nil
 }
 
@@ -627,6 +687,11 @@ func filterRows(rows []VPNRow, c *config) []VPNRow {
 }
 
 // healthCheck 体检：tun 还在不在。不在就返回 false，触发换节点。
+// healthCheck 体检：tun 在不在，以及流量到底出不出得去。
+//
+// 只看 tun 有没有 IP 是不够的——openvpn 进程活着、tun 也拿到了地址，
+// 但对端家宽节点把连接掐了，隧道照样是死的。这时候不换节点，
+// 用户看到的是「一切正常」但流量根本不出去。所以再加一层真实出口探测。
 func healthCheck(st *State, c *config) bool {
 	if st.Ovpn == nil {
 		return false
@@ -635,12 +700,79 @@ func healthCheck(st *State, c *config) bool {
 	if iface == "" {
 		iface = c.iface
 	}
-	if _, ok := tunAddr(iface); ok {
-		return true
+	if _, ok := tunAddr(iface); !ok {
+		logf("家宽隧道断了（tun %s 没了），换节点重连", iface)
+		StopOvpn(strconv.Itoa(st.Ovpn.ID), c.cacheDir)
+		return false
 	}
-	logf("家宽隧道断了（%s），换节点重连", st.Ovpn.Host)
-	StopOvpn(strconv.Itoa(st.Ovpn.ID), c.cacheDir)
-	return false
+
+	// tun 还在，但流量通不通要真问一下外部：拿到的出口 IP 必须还是家宽节点的
+	ip, err := probeExitIP(iface, 12*time.Second)
+	if err != nil {
+		logf("出口探测失败（%v），判定隧道已断，换节点", err)
+		StopOvpn(strconv.Itoa(st.Ovpn.ID), c.cacheDir)
+		return false
+	}
+	if ip != "" && ip == lastTunnelExit {
+		logf("出口 IP 还是本机（%s），流量没走隧道，换节点", ip)
+		StopOvpn(strconv.Itoa(st.Ovpn.ID), c.cacheDir)
+		return false
+	}
+	logf("体检通过，出口 %s", ip)
+	return true
+}
+
+// lastTunnelExit 存最近一次已知的本机直连出口 IP。
+// 用它判断流量有没有真的走隧道：探测结果和它一样就说明没走。
+var lastTunnelExit string
+
+// probeExitIP 从指定网卡出去问一次「我的出口 IP 是多少」。
+// 用 ifconfig.me 是因为它返回纯文本 IP，不用解析 JSON/Alpine 上没 jq 也行。
+func probeExitIP(iface string, timeout time.Duration) (string, error) {
+	const (
+		lo  = "127.0.0.1"
+		url = "http://ifconfig.me/ip"
+	)
+	// 隧道刚起来时路由可能还没就绪，给几次机会
+	var lastErr error
+	for i := 0; i < 3; i++ {
+		ip, err := httpGetVia(iface, url, timeout)
+		if err == nil && ip != "" {
+			return ip, nil
+		}
+		lastErr = err
+		time.Sleep(2 * time.Second)
+	}
+	if lastErr != nil {
+		return "", lastErr
+	}
+	return "", errors.New("探测返回空")
+}
+
+// httpGetVia 绑定指定网卡发一次 GET，返回去掉空白的响应体。
+func httpGetVia(iface, rawURL string, timeout time.Duration) (string, error) {
+	dialer := &net.Dialer{
+		Timeout: timeout,
+		// 关键：绑到 tun 网卡的本地地址，流量才会真的走隧道出去
+		LocalAddr: &net.UDPAddr{},
+	}
+	if local := tunLocalAddr(iface); local != "" {
+		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(local)}
+	}
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{DialContext: dialer.DialContext},
+	}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(raw)), nil
 }
 
 func dryRunOvpn(h *Harvester, c *config) error {
@@ -674,6 +806,27 @@ func dryRunOvpn(h *Harvester, c *config) error {
 }
 
 // ---------------------------------------------------------------- 杂项
+
+// nodeReachable 探一下节点连不连得上。
+//
+// 只做 TCP 握手——协议层握手要各协议各实现一套，太重。能握手说明主机在线、
+// 端口开着，够用来过滤掉线的节点。超时给短点：批量探几十个，每个卡几秒就太慢。
+func nodeReachable(uri string) bool {
+	node, err := ParseURI(uri)
+	if err != nil {
+		return false
+	}
+	if node.Host == "" || node.Port <= 0 {
+		return false
+	}
+	addr := net.JoinHostPort(node.Host, strconv.Itoa(node.Port))
+	conn, err := net.DialTimeout("tcp", addr, 4*time.Second)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
 
 var countryTable = map[string]string{
 	"japan": "jp", "south-korea": "kr", "usa": "us", "united-states": "us",

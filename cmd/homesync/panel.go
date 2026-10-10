@@ -20,11 +20,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -82,6 +86,17 @@ type Inbound struct {
 	TrafficRes string   `json:"trafficReset,omitempty"`
 	ExpiryTime int64    `json:"expiryTime,omitempty"`
 	Total      int64    `json:"total,omitempty"`
+	// ClientStats 是订阅的关键：subId 在 client 上，没有它就拿不到链接。
+	// 建入站时要在 settings.clients 里带 subId，这里才读得到。
+	ClientStats []ClientStat `json:"clientStats,omitempty"`
+}
+
+// ClientStat 入站下的一个客户端。
+type ClientStat struct {
+	ID     int    `json:"id"`
+	Email  string `json:"email"`
+	SubID  string `json:"subId"`
+	Enable bool   `json:"enable"`
 }
 
 // Client 面板 API 客户端。所有写操作都带 Bearer token。
@@ -571,4 +586,234 @@ func toStringSlice(v any) []string {
 		return t
 	}
 	return nil
+}
+
+// ── 多出口入站 ────────────────────────────────────────
+//
+// 一个家宽出口要能被客户端订阅到，得有一个对应的入站。
+// 所以 N 条隧道就是 N 个入站、N 条链接——订阅一次全拿到，
+// 每个节点走不同的家宽 IP。
+
+// ExitInbound 一个出站的入口：入站 + 它绑定的家宽出口。
+type ExitInbound struct {
+	ID       int    `json:"id"`
+	Port     int    `json:"port"`
+	Remark   string `json:"remark"`
+	Protocol string `json:"protocol"`
+	Tag      string `json:"tag"`
+	Exit     string `json:"exit"` // 绑定的出口名，空表示直连
+}
+
+// randomToken 生成一串随机 hex。
+func randomToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("生成随机串失败: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// randomPassword 生成 shadowsocks 口令。
+func randomPassword() (string, error) {
+	return randomToken(8)
+}
+
+// AddExitInbound 为一个家宽出口建入站，并把它绑到该出口。
+//
+// 用 shadowsocks：它不需要证书，是唯一能开箱建起来还合法的入站。
+// 之前给 vless/trojan 塞家宽 URI 会让 xray 崩（缺证书、REALITY 参数非法）。
+//
+// 返回建好的入站信息。绑路由失败不算致命——入站还在，只是走直连，
+// 所以只记日志不回滚。
+func (c *Client) AddExitInbound(exit string, socksPort, inboundPort int, used map[int]bool) (*ExitInbound, error) {
+	port := inboundPort
+	if port <= 0 || used[port] {
+		p, err := freeRandomPort(used)
+		if err != nil {
+			return nil, err
+		}
+		port = p
+	}
+	used[port] = true
+
+	pw, err := randomPassword()
+	if err != nil {
+		return nil, err
+	}
+	// 订阅靠 subId 认人，没有它就拿不到链接
+	subID, err := randomToken(16)
+	if err != nil {
+		return nil, err
+	}
+
+	tag := ManagedPrefix + exitName(exit)
+	settings, _ := json.Marshal(map[string]any{
+		"method":   "chacha20-ietf-poly1305",
+		"password": pw,
+		// 注意 network 只能是 tcp/udp 之一，写 "tcp,udp" xray 会崩：
+		// unknown transport protocol: tcp,udp（真机踩到）
+		"network": "tcp",
+		"clients": []any{
+			map[string]any{
+				"email":    exit + "@home",
+				"password": pw,
+				"subId":    subID,
+				"enable":   true,
+			},
+		},
+	})
+	stream, _ := json.Marshal(map[string]any{
+		"network":  "tcp",
+		"security": "none",
+	})
+	sniffing := `{"enabled":true,"destOverride":["http","tls"]}`
+
+	in := &Inbound{
+		Remark:     "🏠 " + exit,
+		Tag:        tag,
+		Enable:     true,
+		Protocol:   "shadowsocks",
+		Port:       port,
+		Listen:     "0.0.0.0",
+		Settings:   FlexJSON(settings),
+		StreamSet:  FlexJSON(stream),
+		Sniffing:   FlexJSON(sniffing),
+		TrafficRes: "never",
+	}
+	id, err := c.AddInbound(in)
+	if err != nil {
+		return nil, err
+	}
+
+	// 绑到出口。失败不回滚：入站还在，只是走直连，比整个没了强
+	if err := c.BindInboundToExit(tag, exit); err != nil {
+		logf("⚠️  入站 %s 建好了但绑出口失败（会走直连）: %v", tag, err)
+		return &ExitInbound{ID: id, Port: port, Remark: in.Remark,
+			Protocol: "shadowsocks", Tag: tag}, nil
+	}
+	return &ExitInbound{ID: id, Port: port, Remark: in.Remark,
+		Protocol: "shadowsocks", Tag: tag, Exit: exit}, nil
+}
+
+// ClearExitInbounds 清掉本工具为出口建的入站，并解绑路由。
+// 只碰 ManagedPrefix 前缀的，用户手工建的一律不动。
+func (c *Client) ClearExitInbounds() (int, error) {
+	list, err := c.ListInbounds()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, in := range list {
+		if !strings.HasPrefix(in.Tag, ManagedPrefix) {
+			continue
+		}
+		if err := c.DelInbound(in.ID); err != nil {
+			logf("删入站 %s 失败: %v", in.Tag, err)
+			continue
+		}
+		n++
+	}
+	// 路由规则也要清：入站没了，规则留着会指向不存在的 tag
+	cfg, err := c.GetXrayConfig()
+	if err == nil {
+		cfg.raw["routing"] = pruneRouting(cfg.raw["routing"], OutboundTagPrefix)
+		if err := c.SaveXray(cfg); err != nil {
+			logf("清理路由失败: %v", err)
+		}
+	}
+	return n, nil
+}
+
+// subPath 面板订阅路径。3x-ui v3.9.0 起是随机串（如 /cua8v3acksafuxjq/），
+// 不是默认的 /sub/。面板 API 不暴露它，只能从面板数据库读或手工配，
+// 所以用参数传入，读不到就退回 /sub/。
+var subPath = "/sub/"
+
+// subPort 面板订阅服务端口。它跟面板本身是分开的两个服务
+// （日志里 "Sub server running HTTP on [::]:2096"）。
+var subPort = 2096
+
+// InboundLinks 拿一组入站的分享链接。
+//
+// 3x-ui 没有「一次拿多个入站链接」的接口，只能按 client 的 subId
+// 逐个拉订阅。返回顺序跟入站一一对应。
+func (c *Client) InboundLinks(ids []int, host string) ([]string, error) {
+	list, err := c.ListInbounds()
+	if err != nil {
+		return nil, err
+	}
+	// 入站 ID -> client 的 subId
+	subOf := map[int]string{}
+	for _, in := range list {
+		for _, cs := range in.ClientStats {
+			if cs.SubID != "" {
+				subOf[in.ID] = cs.SubID
+			}
+		}
+	}
+
+	base := fmt.Sprintf("http://%s:%d", hostOf(host), subPort)
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		sub, ok := subOf[id]
+		if !ok {
+			continue
+		}
+		// 订阅正文是整份 base64，一行就是一条链接；这里取第一条
+		body, err := c.getRaw(base + subPath + sub)
+		if err != nil {
+			logf("入站 %d 的链接没拿到: %v", id, err)
+			continue
+		}
+		link := firstSubLink(body)
+		if link != "" {
+			out = append(out, link)
+		}
+	}
+	return out, nil
+}
+
+// hostOf 去掉 host 里可能带的端口，订阅端口是独立的。
+func hostOf(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+// firstSubLink 从订阅正文里取出第一条链接。
+// 正文是整份 base64，解出来可能多行（一个入站一般就一条）。
+func firstSubLink(body string) string {
+	dec, err := base64.StdEncoding.DecodeString(strings.TrimSpace(body))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(dec), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+// getRaw 拿一段文本响应，不做 JSON 解析。
+func (c *Client) getRaw(url string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }

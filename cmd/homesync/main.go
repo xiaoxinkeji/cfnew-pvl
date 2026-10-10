@@ -41,31 +41,36 @@ func logf(format string, args ...interface{}) {
 }
 
 type config struct {
-	mode       string
-	url        string
-	token      string
-	configPath string
-	limit      int
-	maxInbound int
-	protos     string
-	country    string
-	minSpeed   float64
-	portStart  int
-	netBase    int
-	slot       int
-	iface      string
-	ovpnBin    string
-	refresh    bool
-	skipProbe  bool
-	dryRun     bool
-	clean      bool
-	daemon     int
-	insecure   bool
-	workers    int
-	statePath  string
-	cacheDir   string
-	workDir    string
-	dir        string
+	mode         string
+	url          string
+	token        string
+	configPath   string
+	limit        int
+	maxInbound   int
+	protos       string
+	country      string
+	minSpeed     float64
+	portStart    int
+	netBase      int
+	count        int
+	subAddr      string
+	panelSubPath string
+	panelSubPort int
+	subToken     string
+	slot         int
+	iface        string
+	ovpnBin      string
+	refresh      bool
+	skipProbe    bool
+	dryRun       bool
+	clean        bool
+	daemon       int
+	insecure     bool
+	workers      int
+	statePath    string
+	cacheDir     string
+	workDir      string
+	dir          string
 }
 
 func main() {
@@ -90,6 +95,11 @@ func parseFlags() *config {
 	flag.IntVar(&c.portStart, "port-start", 21000, "SOCKS5 起始端口")
 	flag.IntVar(&c.netBase, "net-base", 0, "隧道网段第二段（0=自动挑一个空闲的）")
 	flag.IntVar(&c.slot, "slot", 1, "隧道槽位号，决定 netns 名")
+	flag.IntVar(&c.count, "count", 3, "多出口模式下起几条隧道（每个一条家宽）")
+	flag.StringVar(&c.subAddr, "sub-addr", "", "订阅服务监听地址，如 0.0.0.0:2097")
+	flag.StringVar(&c.subToken, "sub-token", "", "订阅口令；留空自动生成一串并落盘")
+	flag.StringVar(&c.panelSubPath, "panel-sub-path", "", "面板订阅路径（v3.9.0 是随机串，如 /cua8v3acksafuxjq/）；留空用 /sub/")
+	flag.IntVar(&c.panelSubPort, "panel-sub-port", 2096, "面板订阅服务端口（跟面板端口不同）")
 	flag.StringVar(&c.iface, "iface", "tun0", "OpenVPN tun 网卡名")
 	flag.StringVar(&c.ovpnBin, "ovpn-bin", "openvpn", "openvpn 可执行文件名")
 	flag.BoolVar(&c.refresh, "refresh", false, "忽略清单缓存重拉")
@@ -241,8 +251,9 @@ func loadFileConfig(path string) (*fileConfig, error) {
 func run(c *config) error {
 	checkTokenSafety(c)
 
-	if c.mode != "xray" && c.mode != "ovpn" {
-		return fmt.Errorf("-mode 只支持 xray 或 ovpn，收到 %q", c.mode)
+	validMode := map[string]bool{"xray": true, "ovpn": true, "exits": true, "sub": true}
+	if !validMode[c.mode] {
+		return fmt.Errorf("-mode 只支持 xray、ovpn、exits 或 sub，收到 %q", c.mode)
 	}
 
 	h, err := NewHarvester(c.cacheDir)
@@ -323,6 +334,12 @@ func run(c *config) error {
 		switch {
 		case c.mode == "ovpn" && c.dryRun:
 			if err := dryRunOvpn(h, c); err != nil {
+				return err
+			}
+		case c.mode == "sub":
+			return runSub(pc, c)
+		case c.mode == "exits":
+			if err := syncExits(h, pc, c, st); err != nil {
 				return err
 			}
 		case c.mode == "ovpn":
@@ -672,6 +689,168 @@ func exitName(host string) string {
 		out = out[:32]
 	}
 	return out
+}
+
+// syncExits 起多条隧道：一个家宽出口一个 SOCKS5 端口 + 一个入站。
+//
+// 这样订阅一次就拿到全部出口，每个节点走不同的家宽 IP。
+// 单条隧道的 syncOvpn 只适合「只要一个出口」的场景。
+// runSub 起聚合订阅服务。
+func runSub(pc *Client, c *config) error {
+	tok := c.subToken
+	if tok == "" {
+		var err error
+		tok, err = loadOrCreateSubToken(c.statePath)
+		if err != nil {
+			return err
+		}
+	}
+	// 面板订阅路径/端口：读不到就用默认值，配错了会拿不到链接
+	if c.panelSubPath != "" {
+		p := c.panelSubPath
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		if !strings.HasSuffix(p, "/") {
+			p += "/"
+		}
+		subPath = p
+	}
+	if c.panelSubPort > 0 {
+		subPort = c.panelSubPort
+	}
+	addr := c.subAddr
+	if addr == "" {
+		addr = "0.0.0.0:2097"
+	}
+	return serveSub(pc, addr, tok)
+}
+
+// loadOrCreateSubToken 订阅口令落盘，重启后地址不变。
+// 不落盘的话每次重启地址都变，客户端得重新配。
+func loadOrCreateSubToken(statePath string) (string, error) {
+	p := filepath.Join(filepath.Dir(statePath), ".sub-token")
+	if raw, err := os.ReadFile(p); err == nil {
+		if tok := strings.TrimSpace(string(raw)); tok != "" {
+			return tok, nil
+		}
+	}
+	tok, err := randomToken(subTokenLen)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(p, []byte(tok+"\n"), 0o600); err != nil {
+		logf("订阅口令落盘失败（地址每次重启会变）: %v", err)
+	}
+	return tok, nil
+}
+
+func syncExits(h *Harvester, pc *Client, c *config, st *State) error {
+	logf("多出口模式：准备起 %d 条家宽隧道", c.count)
+	if os.Geteuid() != 0 {
+		return errors.New("需要 root（要建 netns、改 iptables、跑 openvpn）")
+	}
+	if c.netBase <= 0 {
+		if st.NetBase > 0 {
+			c.netBase = st.NetBase
+		} else {
+			base, err := freeNetBase()
+			if err != nil {
+				return err
+			}
+			c.netBase = base
+		}
+	}
+	st.NetBase = c.netBase
+
+	rows, err := h.FetchCatalog(c.refresh)
+	if err != nil {
+		return err
+	}
+	cands := filterRows(rows, c)
+	if len(cands) == 0 {
+		return errors.New("没有符合条件的家宽节点")
+	}
+	logf("筛出 %d 个候选，取前 %d 个", len(cands), c.count)
+
+	// 先停掉上一轮
+	for _, t := range st.Tunnels {
+		StopTunnel(t, c.netBase)
+	}
+	st.Tunnels = nil
+	if n, err := pc.ClearExitInbounds(); err == nil && n > 0 {
+		logf("清掉上一轮 %d 个入站", n)
+	}
+
+	used, err := pc.usedPorts()
+	if err != nil {
+		logf("读已占用端口失败（%v），退回硬递增", err)
+		used = map[int]bool{}
+	}
+
+	exits := map[string]int{} // 出口名 -> SOCKS5 端口
+	started := 0
+	for i, row := range cands {
+		if started >= c.count {
+			break
+		}
+		slot := i + 1
+		logf("[%d/%d] 节点 %d（%s，%.1f Mbps）…", started+1, c.count, row.ID, row.Country, row.Throughput)
+
+		raw, err := h.FetchOvpn(row.ID, 2)
+		if err != nil {
+			logf("  ❌ 拿不到配置：%v", err)
+			continue
+		}
+		cfg, err := ParseOvpn(raw)
+		if err != nil {
+			logf("  ❌ 解析失败：%v", err)
+			continue
+		}
+		if cfg.CA == "" {
+			logf("  ❌ 缺 CA 证书")
+			continue
+		}
+		confPath := filepath.Join(c.cacheDir, fmt.Sprintf("home-%s.ovpn", slugify(strconv.Itoa(row.ID))))
+		if err := WriteOvpnConf(cfg, confPath); err != nil {
+			logf("  ❌ 写配置失败：%v", err)
+			continue
+		}
+
+		socksPort := c.portStart + slot
+		tun, err := StartTunnel(slot, socksPort, c.netBase, cfg.Host, confPath, c.ovpnBin, c.cacheDir)
+		if err != nil {
+			logf("  ❌ %v", err)
+			continue
+		}
+		used[tun.Port] = true
+		st.Tunnels = append(st.Tunnels, tun)
+
+		name := exitName(cfg.Host)
+		exits[name] = tun.Port
+
+		// 给这个出口建入站并绑过去
+		ib, err := pc.AddExitInbound(name, tun.Port, 0, used)
+		if err != nil {
+			logf("  ❌ 建入站失败：%v", err)
+			StopTunnel(tun, c.netBase)
+			continue
+		}
+		logf("  ✅ 出口就绪：入站端口 %d → 家宽 %s（出口 IP %s）", ib.Port, cfg.Host, tun.ExitIP)
+		started++
+	}
+
+	if err := pc.SyncOutbounds(exits); err != nil {
+		return err
+	}
+	if err := SaveState(c.statePath, st); err != nil {
+		logf("状态写入失败：%v", err)
+	}
+	logf("共 %d 个家宽出口就绪，订阅里能看到它们", started)
+	if started == 0 {
+		return errors.New("一个出口都没起来")
+	}
+	return nil
 }
 
 func filterRows(rows []VPNRow, c *config) []VPNRow {

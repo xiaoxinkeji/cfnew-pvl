@@ -11,3 +11,7 @@ __pycache__/
 
 # Node
 node_modules/
+
+# 3x-ui 同步器：面板地址 + API token，绝不能提交
+tools/config.json
+tools/.sync_state.json

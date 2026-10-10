@@ -4,6 +4,11 @@
 
 **单文件静态二进制，零第三方依赖**（只用 Go 标准库），拷到目标机器直接跑，不用装 Go、不用装 Python。
 
+> 相关文档：主说明见 [README.md](README.md)，另一个新增功能是
+> [公共节点订阅（PublicVPNList）](README-PVL.md)，架构与模块划分见
+> [docs/architecture.md](docs/architecture.md)，出问题先看
+> [docs/troubleshooting.md](docs/troubleshooting.md)。
+
 ---
 
 ## 先说清楚一件事，免得白跑

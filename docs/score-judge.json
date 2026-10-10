@@ -1,0 +1,38 @@
+{
+  "scored_by": "plugin-eval evaluation-methodology (wshobson/agents)",
+  "scored_at": "2026-10-10",
+  "note": "两位独立裁判按 rubrics.md 锚点打分，取平均。分差 0.09/0.14/0.04/0.08，方向一致。",
+  "judges": [
+    {
+      "judge": "裁判A",
+      "triggering_accuracy": 0.55,
+      "orchestration_fitness": 0.50,
+      "output_quality": 0.66,
+      "scope_calibration": 0.55,
+      "evidence": {
+        "triggering_accuracy": "0.40–0.59 档上沿：README-PVL.md:28-31 列出 target、:88-99 配置键表、:59-67 CLI 示例，本身够 0.8；但主入口 README.md 全文 0 处提 pvl，变量表止于 jk，无链接指向两份子 README，فارسی.md 零命中——三条主路径两条静默；且 README-PVL 漏了 --vpn-only/--max-latency/--workers/--sleep/--out 五个参数与四个真实产出文件。",
+        "orchestration_fitness": "0.40–0.59 档：pvl 模块本身拆得干净（多为纯函数，最大 113 行），sync_3xui.py 也分层；但主文件 10199 行 / 168 顶层函数，处理订阅值() 1759 行、检查加密问候状态() 1066 行、解析地址值端口() 850 行，处理订阅请求() 把「选来源+三层回落」与「生成格式」混在 60 分支 switch 里。",
+        "output_quality": "0.60–0.79 档下沿：clash.yaml 可被 yaml.safe_load 解析（160 proxies），singbox.json 合法且 167 outbound，51+102 断言通过，覆盖 REALITY pbk/sid、SS base64、VMess base64 JSON、证书 YAML 锚点、6 类坏输入；扣分：hysteria2 仅 7/24（29%），ovpn:// 自造 scheme 无人认，回落成无 CA 空壳节点。",
+        "scope_calibration": "0.40–0.59 档：增量成比例（Worker +530 行、9 键、2 target、2 按钮、1 区块），功能不残缺；但载体 10199 行单文件无模块化，tools/ 下并行两个约 970 行工具，sync_3xui.py 自成产品，超出「订阅生成器」域。"
+      }
+    },
+    {
+      "judge": "裁判B",
+      "triggering_accuracy": 0.64,
+      "orchestration_fitness": 0.64,
+      "output_quality": 0.72,
+      "scope_calibration": 0.48,
+      "evidence": {
+        "triggering_accuracy": "0.60–0.79 档下沿：target 有文档、CLI 参数完整、配置键前缀统一支持大小写别名；硬伤是主入口断链（README.md 零命中 pvl/public/3xui），三份 README 无交叉链接，均缺触发短语。",
+        "orchestration_fitness": "0.60–0.79 档：pvl 六段分离清晰，工具侧各自独立并带测试；但 公共节点取全部() 混合并发编排与回落策略，缓存为模块级全局需 setter 桩。",
+        "output_quality": "0.60–0.79 档上沿：51+102 断言全通过，真实格式解析覆盖全面，证书锚点复用；扣分为回落空证书节点、openvpn 硬编码凭据、hysteria2 缺字段且 insecure 未归一、Worker 无 sing-box 目标。",
+        "scope_calibration": "0.40–0.59 档：主文件 10199 行单体无 references/；sync_3xui.py 跨域；三份 README 重复且无链接；国家码映射三处重复实现。"
+      }
+    }
+  ],
+  "top_3_fixes": [
+    "（triggering_accuracy 0.25）主 README 补「公共节点」节并挂链接、9 个 pvl* 键补进环境变量表、فارسی.md 同步",
+    "（orchestration_fitness 0.20）拆 公共节点取全部()、缓存入参化、主文件拆出 docs/ 消 BLOATED_SKILL",
+    "（output_quality 0.15）修 ovpn:// 自造 scheme、空证书节点、硬编码凭据、hysteria2 字段，补 sing-box 目标"
+  ]
+}

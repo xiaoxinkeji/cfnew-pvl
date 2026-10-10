@@ -40,7 +40,7 @@ ${模块源码}
 return {
   公共节点取指令, 公共节点取内联块, 公共节点解析原文, 公共节点筛选,
   公共节点国家码, 公共节点转节点行, 公共节点去重名, 公共节点缩进证书,
-  生成公共节点订阅, 生成公共节点链接列表, 公共节点取全部,
+  生成公共节点订阅, 生成公共节点链接列表, 生成公共节点盒子订阅, 公共节点转出站, 公共节点取全部,
   set 自定义域名系统值(v) { 自定义域名系统 = v; },
   set 缓存(v) { 公共节点缓存 = v; },
   set 缓存时间(v) { 公共节点缓存时间 = v; },
@@ -236,7 +236,10 @@ if (盒子对象) {
   断言('五种协议都有出站', 协议的.length >= 5, String(协议的.length));
   const vless出站 = 出站.find(o => o.type === 'vless');
   断言('VLESS REALITY 公钥', vless出站 && vless出站.tls && vless出站.tls.reality &&
-    vless出站.tls.reality.public_key === 'e2RLf57Li_-MDZGE9ss1BWPgP54mqRb5PfXhW2jcVVg');
+    vless出站.tls.reality.public_key === 'k2hPp0tTW0Da-HK94wYpSCLbuK44LfGqC2MSJIM1Ti0',
+    JSON.stringify(vless出站 && vless出站.tls && vless出站.tls.reality));
+  断言('VLESS REALITY short_id', vless出站 && vless出站.tls.reality.short_id === '48050fab');
+  断言('VLESS utls 指纹', vless出站 && vless出站.tls.utls.fingerprint === 'chrome');
   断言('VLESS flow', vless出站 && vless出站.flow === 'xtls-rprx-vision');
   断言('不出 openvpn 类型（sing-box 无此出站）', !出站.some(o => o.type === 'openvpn'));
   断言('tag 不重复', new Set(出站.map(o => o.tag)).size === 出站.length);

@@ -5097,6 +5097,7 @@ async function 处理订阅值(请求241, 用户240 = null) {
       pvlHint: 解码64('5byA5ZCv5LmL5ZCO5a6i5oi356uv5YiX6KGo5aSa5LiA5Liq44CMQ0xBU0gg5YWs5YWx44CN5ZKM5LiA5Liq44CM5YWs5YWx6L+e5o6l44CN44CC6IqC54K55YWo6YOo5Y+W6IeqIFB1YmxpY1ZQTkxpc3Qg55qE5a6e5rWL5riF5Y2V77yM5oyJ6YCf5bqm5ZKM5bu26L+f5o6S5bqP77yM5LiN6ZyA6KaB6Ieq5bex5pCt5pyN5Yqh5Zmo44CCT3BlblZQTiDoioLngrnpnIDopoEgQ2xhc2ggTWV0YSAxLjE5LjI1IOS7peS4iuWGheaguO+8m1ZMRVNTL1Ryb2phbi9TUyDnrYnljY/orq7ku7vmhI/lhoXmoLjpg73og73nlKjjgILoioLngrnmmK/nrKzkuInmlrnlhbHkuqvnmoTvvIzmjonnur/mraPluLjvvIzoh6rliqjnu4TkvJrlvoDkuIvmjaLjgII='),
       pvlClient: 'CLASH 公共',
       pvlUriClient: '公共连接',
+      pvlBoxClient: 'SING-BOX 公共',
       pvlUrlLabel: '节点清单地址（留空用官方）',
       pvlMinLabel: '最低实测速度 (Mbps)',
       pvlMaxLabel: '最高实测延迟 (ms)',
@@ -5274,6 +5275,7 @@ async function 处理订阅值(请求241, 用户240 = null) {
       pvlHint: 解码64('2YHYudin2YTigIzYs9in2LLbjCDYs9ix2YjYsdmH2KfbjCDYudmF2YjZhduMIFB1YmxpY1ZQTkxpc3Qg2LHYpyDYqNmHINmB2YfYsdiz2Kog2qnZhNin24zZhtiqINin2LbYp9mB2Ycg2YXbjOKAjNqp2YbYry4g2LPYsdmI2LHZh9inINio2LEg2KfYs9in2LMg2LPYsdi52Kog2Ygg2KrYo9iu24zYsSDYp9mG2K/Yp9iy2YfigIzar9uM2LHbjCDYtNiv2Ycg2YXYsdiq2Kgg2YXbjOKAjNi02YjZhtivINmIINmG24zYp9iy24wg2KjZhyDYs9ix2YjYsSDYtNiu2LXbjCDZhtiv2KfYsdmG2K8u'),
       pvlClient: 'CLASH عمومی',
       pvlUriClient: 'اتصال عمومی',
+      pvlBoxClient: 'SING-BOX عمومی',
       pvlUrlLabel: 'آدرس فهرست سرورها (خالی = پیش‌فرض)',
       pvlMinLabel: 'حداقل سرعت اندازه‌گیری شده (Mbps)',
       pvlMaxLabel: 'حداکثر تأخیر اندازه‌گیری شده (ms)',
@@ -6331,6 +6333,7 @@ async function 处理订阅值(请求241, 用户240 = null) {
                     <button class="client-btn" id="jkClientBtn" style="${启用家宽链式 ? '' : 'display: none;'}" onclick="生成客户端链接('vg', '${翻译值.jkClient}')">${翻译值.jkClient}</button>
                     <button class="client-btn" id="pvlClientBtn" style="${启用公共节点 ? '' : 'display: none;'}" onclick="生成客户端链接('pvl', '${翻译值.pvlClient}')">${翻译值.pvlClient}</button>
                     <button class="client-btn" id="pvlUriClientBtn" style="${启用公共节点 ? '' : 'display: none;'}" onclick="生成客户端链接('pvluri', '${翻译值.pvlUriClient}')">${翻译值.pvlUriClient}</button>
+                    <button class="client-btn" id="pvlBoxClientBtn" style="${启用公共节点 ? '' : 'display: none;'}" onclick="生成客户端链接('pvlsb', '${翻译值.pvlBoxClient}')">${翻译值.pvlBoxClient}</button>
                 </div>
                 <div class="subscription-url" id="clientSubscriptionUrl"></div>
             </div>
@@ -6972,6 +6975,9 @@ function 生成客户端链接(客户端类型, 客户端名称) {
     if (客户端类型 === 'vg' || 客户端类型 === 'pvl') {
       方案网址 = '${解码64('Y2xhc2g6Ly9pbnN0YWxsLWNvbmZpZz91cmw9')}' + encodeURIComponent(最终网址);
       if (客户端类型 === 'pvl') 显示名称 = 'CLASH';
+    } else if (客户端类型 === 'pvlsb') {
+      方案网址 = '${解码64('c2luZy1ib3g6Ly9pbXBvcnQtY29uZmlnP3VybD0=')}' + encodeURIComponent(最终网址);
+      显示名称 = 'SING-BOX';
     } else if (客户端类型 === atob('Y2xhc2g=')) {
       if (客户端名称 === 'STASH') {
         方案网址 = '${解码64('c3Rhc2g6Ly9pbnN0YWxsP3VybD0=')}' + encodeURIComponent(最终网址);
@@ -7517,7 +7523,7 @@ function 应用配置到界面(配置) {
   写入字段值('pvlproto', 配置.pvlproto);
   写入开关值('pvlraw', 配置.pvlraw, true);
   const 公共开关 = 是否开关启用(配置.pvl, false);
-  for (const 标识 of ['pvlClientBtn', 'pvlUriClientBtn']) {
+  for (const 标识 of ['pvlClientBtn', 'pvlUriClientBtn', 'pvlBoxClientBtn']) {
     const 按钮 = document.getElementById(标识);
     if (按钮) 按钮.style.display = 公共开关 ? '' : 'none';
   }

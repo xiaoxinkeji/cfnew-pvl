@@ -51,6 +51,8 @@ type config struct {
 	country    string
 	minSpeed   float64
 	portStart  int
+	netBase    int
+	slot       int
 	iface      string
 	ovpnBin    string
 	refresh    bool
@@ -85,7 +87,9 @@ func parseFlags() *config {
 	flag.StringVar(&c.protos, "protos", "", "只取这些协议，逗号分隔（默认全取）")
 	flag.StringVar(&c.country, "country", "", "只留这些国家（slug，逗号分隔）")
 	flag.Float64Var(&c.minSpeed, "min-speed", 0, "OpenVPN 最低实测 Mbps")
-	flag.IntVar(&c.portStart, "port-start", 20000, "inbound 起始端口")
+	flag.IntVar(&c.portStart, "port-start", 21000, "SOCKS5 起始端口")
+	flag.IntVar(&c.netBase, "net-base", 0, "隧道网段第二段（0=自动挑一个空闲的）")
+	flag.IntVar(&c.slot, "slot", 1, "隧道槽位号，决定 netns 名")
 	flag.StringVar(&c.iface, "iface", "tun0", "OpenVPN tun 网卡名")
 	flag.StringVar(&c.ovpnBin, "ovpn-bin", "openvpn", "openvpn 可执行文件名")
 	flag.BoolVar(&c.refresh, "refresh", false, "忽略清单缓存重拉")
@@ -505,9 +509,9 @@ func buildFromURI(uri string, port int) (*Inbound, error) {
 		Protocol:   node.Protocol,
 		Port:       port,
 		Listen:     "0.0.0.0",
-		Settings:   RawMessage(settingsRaw),
-		StreamSet:  RawMessage(streamRaw),
-		Sniffing:   RawMessage(sniffingRaw),
+		Settings:   FlexJSON(settingsRaw),
+		StreamSet:  FlexJSON(streamRaw),
+		Sniffing:   FlexJSON(sniffingRaw),
 		TrafficRes: "never",
 	}, nil
 }
@@ -545,11 +549,24 @@ func dryRunXray(h *Harvester, c *config) error {
 // ---------------------------------------------------------------- 路线 A
 
 func syncOvpn(h *Harvester, pc *Client, c *config, st *State) error {
-	logf("路线 A：OpenVPN 家宽落地")
+	logf("路线 A：OpenVPN 家宽落地（netns 隔离 + SOCKS5 出口）")
 	if os.Geteuid() != 0 {
-		return errors.New("路线 A 需要 root（要建 tun 网卡、跑 openvpn）。" +
-			"没有 root 就用 -mode xray 走路线 B")
+		return errors.New("路线 A 需要 root（要建 netns、改 iptables、跑 openvpn）")
 	}
+	// 网段第二段：没指定就挑一个没被占用的。
+	// 同一台机器跑多份实例时用得上，撞网段会把别人的路由顶掉。
+	if c.netBase <= 0 {
+		if st.NetBase > 0 {
+			c.netBase = st.NetBase
+		} else {
+			base, err := freeNetBase()
+			if err != nil {
+				return err
+			}
+			c.netBase = base
+		}
+	}
+	st.NetBase = c.netBase
 
 	rows, err := h.FetchCatalog(c.refresh)
 	if err != nil {
@@ -583,72 +600,78 @@ func syncOvpn(h *Harvester, pc *Client, c *config, st *State) error {
 			continue
 		}
 
-		if st.Ovpn != nil {
-			StopOvpn(strconv.Itoa(st.Ovpn.ID), c.cacheDir)
+		// 用隧道起一条家宽出口：netns 内跑 openvpn，母机暴露 SOCKS5 端口。
+		//
+		// 之前建 tunnel inbound 的做法有问题：它把流量导进全局 tun，
+		// 多条隧道会互相顶路由；而且 3x-ui 的 inbound 是「别人连我」，
+		// 拿它做出口方向是反的。
+		if len(st.Tunnels) > 0 {
+			StopTunnel(st.Tunnels[0], c.netBase)
+			st.Tunnels = nil
 		}
 		time.Sleep(time.Second)
-		if err := StartOvpn(confPath, strconv.Itoa(row.ID), c.ovpnBin, c.cacheDir); err != nil {
-			return err
-		}
-		tunIP, err := WaitTun(c.iface, 45*time.Second)
+
+		slot := c.slot
+		port := c.portStart + slot
+		tun, err := StartTunnel(slot, port, c.netBase, cfg.Host,
+			confPath, c.ovpnBin, c.cacheDir)
 		if err != nil {
 			logf("  ❌ %v，换下一个", err)
-			StopOvpn(strconv.Itoa(row.ID), c.cacheDir)
 			continue
 		}
-		logf("  ✅ tun 起来了，虚拟地址 %s（出口 %s:%d）", tunIP, cfg.Host, cfg.Port)
+		logf("  ✅ 隧道起来了（SOCKS5 端口 %d，出口 IP %s）", tun.Port, tun.ExitIP)
 
-		removed, err := pc.ClearManaged(ManagedPrefix)
-		if err != nil {
-			return err
-		}
-		if removed > 0 {
-			logf("清掉上一轮 %d 个", removed)
-		}
-		st.Managed = nil
-
-		gw := GatewayOf(tunIP)
-		if gw == "" {
-			return fmt.Errorf("推不出网关地址：%s", tunIP)
-		}
-		// tunnel = dokodemo-door，把流量导进 tun 的对端网关
-		settings, _ := json.Marshal(map[string]interface{}{
-			"address": gw, "port": c.portStart, "network": "tcp,udp",
-		})
-		stream, _ := json.Marshal(map[string]string{"network": "tcp,udp"})
-		tag := ManagedPrefix + "tun-0"
-		in := &Inbound{
-			Remark:     "🏠 家宽出口",
-			Tag:        tag,
-			Enable:     true,
-			Protocol:   "tunnel",
-			Port:       c.portStart,
-			Listen:     "127.0.0.1",
-			Settings:   RawMessage(settings),
-			StreamSet:  RawMessage(stream),
-			Sniffing:   RawMessage(`{"enabled":true,"destOverride":["http","tls"]}`),
-			TrafficRes: "never",
-		}
-		if _, err := pc.AddInbound(in); err != nil {
-			logf("  ❌ 建 tunnel inbound 失败：%v", err)
+		// 把出口写进面板的 outbound，并让用户已有的 inbound 可以绑上去。
+		// 注意：**不建 inbound**。inbound 是用户自己的入口，带自己的证书；
+		// 我们只管出站和路由规则。
+		exits := map[string]int{exitName(cfg.Host): tun.Port}
+		if err := pc.SyncOutbounds(exits); err != nil {
+			logf("  ❌ 写面板出站失败：%v", err)
+			StopTunnel(tun, c.netBase)
 			continue
 		}
-		st.Managed = []string{tag}
+
+		st.Tunnels = []*Tunnel{tun}
 		st.Ovpn = &OvpnState{
 			ID: row.ID, Host: cfg.Host, Port: cfg.Port,
-			Conf: confPath, Iface: c.iface, TS: time.Now().Unix(),
+			Conf: confPath, Iface: nsName(slot), TS: time.Now().Unix(),
 		}
 		if err := SaveState(c.statePath, st); err != nil {
 			logf("状态写入失败：%v", err)
 		}
-		if err := pc.RestartXray(); err != nil {
-			return err
-		}
-		logf("  ✅ 面板已更新（tunnel inbound 端口 %d，网关 %s），xray 已重启", c.portStart, gw)
+		logf("  ✅ 出口已同步到面板：%s -> 127.0.0.1:%d",
+			OutboundTagPrefix+exitName(cfg.Host), tun.Port)
+		logf("     SOCKS5 凭据 %s / %s（把这个端口当代理用，或让面板 inbound 绑到 %s）",
+			tun.Cred.User, tun.Cred.Pass, OutboundTagPrefix+exitName(cfg.Host))
 		return nil
 	}
 	logf("所有候选都连不上，面板保持原样")
 	return nil
+}
+
+// exitName 把节点主机名转成安全的出站名。
+//
+// 用它而不是槽位号做标识：槽位在重启后会重新分配，用它做 tag 会让
+// 已有的 inbound 绑定悄悄串到别的节点上。
+func exitName(host string) string {
+	var b strings.Builder
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		out = "exit"
+	}
+	// 太长会撞 xray 的 tag 长度限制
+	if len(out) > 32 {
+		out = out[:32]
+	}
+	return out
 }
 
 func filterRows(rows []VPNRow, c *config) []VPNRow {

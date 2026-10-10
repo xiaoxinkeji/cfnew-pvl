@@ -235,6 +235,8 @@ func GatewayOf(tunIP string) string {
 type State struct {
 	Managed []string   `json:"managed"`
 	Ovpn    *OvpnState `json:"ovpn,omitempty"`
+	Tunnels []*Tunnel  `json:"tunnels,omitempty"`
+	NetBase int        `json:"net_base,omitempty"`
 	Updated time.Time  `json:"updated"`
 }
 

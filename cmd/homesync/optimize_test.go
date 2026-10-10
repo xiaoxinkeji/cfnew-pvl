@@ -237,7 +237,7 @@ func TestCountManaged(t *testing.T) {
 // 只按一种形态定义类型，另一头必然崩。
 
 func TestRawMessage_AcceptsBothShapes(t *testing.T) {
-	var obj RawMessage
+	var obj FlexJSON
 	if err := json.Unmarshal([]byte(`{"clients":[]}`), &obj); err != nil {
 		t.Fatalf("对象形态解析失败: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestRawMessage_AcceptsBothShapes(t *testing.T) {
 		t.Errorf("对象形态读回 = %q", obj.String())
 	}
 
-	var str RawMessage
+	var str FlexJSON
 	if err := json.Unmarshal([]byte(`"{\"clients\":[]}"`), &str); err != nil {
 		t.Fatalf("字符串形态解析失败: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestRawMessage_AcceptsBothShapes(t *testing.T) {
 }
 
 func TestRawMessage_MarshalEmptyIsNull(t *testing.T) {
-	var m RawMessage
+	var m FlexJSON
 	out, _ := json.Marshal(m)
 	if string(out) != "null" {
 		t.Errorf("空值应 marshal 成 null，得到 %s", out)

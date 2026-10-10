@@ -218,7 +218,17 @@ else
     exit 1
   fi
   tar xzf "$TMP/h.tar.gz" -C "$TMP"
-  install -m 755 "$TMP/homesync" "$BIN"
+  # 包里的二进制带平台后缀（release workflow 按 GOOS-GOARCH 命名），
+  # 安装后统一叫 homesync。老包可能是无后缀的，两种都认。
+  if [[ -f "$TMP/homesync-linux-${GOARCH}" ]]; then
+    install -m 755 "$TMP/homesync-linux-${GOARCH}" "$BIN"
+  elif [[ -f "$TMP/homesync" ]]; then
+    install -m 755 "$TMP/homesync" "$BIN"
+  else
+    echo "      包里没有二进制：$(ls "$TMP")" >&2
+    rm -rf "$TMP"
+    exit 1
+  fi
   [[ -f "$TMP/hs.sh" ]] && install -m 755 "$TMP/hs.sh" /usr/local/bin/hs
   rm -rf "$TMP"
 fi

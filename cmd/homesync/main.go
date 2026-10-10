@@ -505,9 +505,9 @@ func buildFromURI(uri string, port int) (*Inbound, error) {
 		Protocol:   node.Protocol,
 		Port:       port,
 		Listen:     "0.0.0.0",
-		Settings:   string(settingsRaw),
-		StreamSet:  string(streamRaw),
-		Sniffing:   string(sniffingRaw),
+		Settings:   RawMessage(settingsRaw),
+		StreamSet:  RawMessage(streamRaw),
+		Sniffing:   RawMessage(sniffingRaw),
 		TrafficRes: "never",
 	}, nil
 }
@@ -624,9 +624,9 @@ func syncOvpn(h *Harvester, pc *Client, c *config, st *State) error {
 			Protocol:   "tunnel",
 			Port:       c.portStart,
 			Listen:     "127.0.0.1",
-			Settings:   string(settings),
-			StreamSet:  string(stream),
-			Sniffing:   `{"enabled":true,"destOverride":["http","tls"]}`,
+			Settings:   RawMessage(settings),
+			StreamSet:  RawMessage(stream),
+			Sniffing:   RawMessage(`{"enabled":true,"destOverride":["http","tls"]}`),
 			TrafficRes: "never",
 		}
 		if _, err := pc.AddInbound(in); err != nil {

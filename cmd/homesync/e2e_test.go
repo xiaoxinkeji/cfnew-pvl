@@ -65,7 +65,7 @@ func (m *mockPanel) handler(t *testing.T) http.HandlerFunc {
 			}
 			// settings 必须是合法 JSON 字符串，否则面板会拒
 			for name, s := range map[string]string{
-				"settings": in.Settings, "streamSettings": in.StreamSet, "sniffing": in.Sniffing,
+				"settings": in.Settings.String(), "streamSettings": in.StreamSet.String(), "sniffing": in.Sniffing.String(),
 			} {
 				var v interface{}
 				if err := json.Unmarshal([]byte(s), &v); err != nil {

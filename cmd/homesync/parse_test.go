@@ -248,7 +248,7 @@ func TestBuildFromURI_Payload(t *testing.T) {
 	}
 	// settings/streamSettings/sniffing 必须是合法 JSON 字符串
 	for name, s := range map[string]string{
-		"settings": in.Settings, "streamSettings": in.StreamSet, "sniffing": in.Sniffing,
+		"settings": in.Settings.String(), "streamSettings": in.StreamSet.String(), "sniffing": in.Sniffing.String(),
 	} {
 		var v interface{}
 		if err := json.Unmarshal([]byte(s), &v); err != nil {

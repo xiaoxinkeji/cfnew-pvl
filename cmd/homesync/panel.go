@@ -40,23 +40,47 @@ type Response struct {
 	Obj     json.RawMessage `json:"obj"`
 }
 
+// RawMessage 兼容「字符串」和「对象」两种形态。
+//
+// 真机踩到的坑：3x-ui 的 DB 模型里 settings 是 string，但 API 返回的
+// internal/xray/inbound.go 用的是 json_util.RawMessage（原样透传的 []byte），
+// 所以**读出来是对象、写进去字符串也收**。
+// 用固定类型必然一头崩：读的时候报 cannot unmarshal object into string。
+// 这里照抄它的做法——原样存取，不解释内容。
+type RawMessage []byte
+
+func (m RawMessage) MarshalJSON() ([]byte, error) {
+	if len(m) == 0 {
+		return []byte("null"), nil
+	}
+	return m, nil
+}
+
+func (m *RawMessage) UnmarshalJSON(data []byte) error {
+	*m = append((*m)[0:0], data...)
+	return nil
+}
+
+// String 取原始文本。读出来是对象时返回对象的 JSON 文本。
+func (m RawMessage) String() string { return string(m) }
+
 // Inbound 对齐 3x-ui model.Inbound 的 json tag。
-// Settings / StreamSettings / Sniffing 在面板里是 JSON 字符串，不是嵌套对象——
-// 这是最容易建错的地方，传嵌套对象面板会静默拒绝。
+// Settings / StreamSettings / Sniffing 用 RawMessage：写入按字符串发
+// （面板接受），读取按对象收（面板这么给）——两种都能拿住。
 type Inbound struct {
-	ID         int    `json:"id,omitempty"`
-	Remark     string `json:"remark"`
-	Tag        string `json:"tag"`
-	Enable     bool   `json:"enable"`
-	Protocol   string `json:"protocol"`
-	Port       int    `json:"port"`
-	Listen     string `json:"listen"`
-	Settings   string `json:"settings"`
-	StreamSet  string `json:"streamSettings"`
-	Sniffing   string `json:"sniffing"`
-	TrafficRes string `json:"trafficReset,omitempty"`
-	ExpiryTime int64  `json:"expiryTime,omitempty"`
-	Total      int64  `json:"total,omitempty"`
+	ID         int        `json:"id,omitempty"`
+	Remark     string     `json:"remark"`
+	Tag        string     `json:"tag"`
+	Enable     bool       `json:"enable"`
+	Protocol   string     `json:"protocol"`
+	Port       int        `json:"port"`
+	Listen     string     `json:"listen"`
+	Settings   RawMessage `json:"settings"`
+	StreamSet  RawMessage `json:"streamSettings"`
+	Sniffing   RawMessage `json:"sniffing"`
+	TrafficRes string     `json:"trafficReset,omitempty"`
+	ExpiryTime int64      `json:"expiryTime,omitempty"`
+	Total      int64      `json:"total,omitempty"`
 }
 
 // Client 面板 API 客户端。所有写操作都带 Bearer token。

@@ -229,3 +229,63 @@ func TestCountManaged(t *testing.T) {
 		t.Errorf("自建 inbound 数 = %d, 要 2（手工的不算）", alive)
 	}
 }
+
+// ── settings 双向兼容 ─────────────────────────────────
+//
+// 真机踩到的：3x-ui 的 DB 模型里 settings 是 string，但 API 返回的 DTO
+// 用 json_util.RawMessage（原样透传），所以**读出来是对象、写进去字符串也收**。
+// 只按一种形态定义类型，另一头必然崩。
+
+func TestRawMessage_AcceptsBothShapes(t *testing.T) {
+	var obj RawMessage
+	if err := json.Unmarshal([]byte(`{"clients":[]}`), &obj); err != nil {
+		t.Fatalf("对象形态解析失败: %v", err)
+	}
+	if obj.String() != `{"clients":[]}` {
+		t.Errorf("对象形态读回 = %q", obj.String())
+	}
+
+	var str RawMessage
+	if err := json.Unmarshal([]byte(`"{\"clients\":[]}"`), &str); err != nil {
+		t.Fatalf("字符串形态解析失败: %v", err)
+	}
+	if str.String() != `"{\"clients\":[]}"` {
+		t.Errorf("字符串形态读回 = %q", str.String())
+	}
+}
+
+func TestRawMessage_MarshalEmptyIsNull(t *testing.T) {
+	var m RawMessage
+	out, _ := json.Marshal(m)
+	if string(out) != "null" {
+		t.Errorf("空值应 marshal 成 null，得到 %s", out)
+	}
+}
+
+// 真面板返回 settings 为对象，必须能读进来（这条以前直接崩）
+func TestClient_ListInbounds_ObjectSettings(t *testing.T) {
+	body := `{"success":true,"msg":"","obj":[
+		{"id":1,"tag":"pvl-home-vless-20000","protocol":"vless","port":20000,
+		 "settings":{"clients":[{"id":"uuid"}],"decryption":"none"},
+		 "streamSettings":{"network":"tcp","security":"tls"},
+		 "sniffing":{"enabled":true}}
+	]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL, "tok", true)
+	list, err := c.ListInbounds()
+	if err != nil {
+		t.Fatalf("读对象形态失败（这就是真机那个 bug）: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("应读到 1 条，得到 %d", len(list))
+	}
+	if list[0].Settings.String() != `{"clients":[{"id":"uuid"}],"decryption":"none"}` {
+		t.Errorf("settings 读回不对: %s", list[0].Settings)
+	}
+	if list[0].Tag != "pvl-home-vless-20000" {
+		t.Errorf("tag = %q", list[0].Tag)
+	}
+}

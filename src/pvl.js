@@ -2,7 +2,6 @@
 // 这个文件不直接部署——tools/build.js 会把它内联进 明文源吗（部署必须是单文件）。
 // 单独放这里是为了让模块能独立阅读、独立评审，不再淹没在万行主文件里。
 // 改完记得跑 node tools/build.js。
-
 // 之前家宽链式要自己搭节点、还要靠 VPN Gate 的志愿者共享，掉线是常态。
 // 这里换成直接吃 PublicVPNList 的全量检测清单：那边按小时实测吞吐/RTT，
 // OpenVPN 走清单 + get_token.php 换 .ovpn，多协议走 download.php 直接拿 share URI。
@@ -22,7 +21,6 @@ const 公共节点分页正则 = /rel="next nofollow"/;
 const 公共节点取原文上限 = 60;
 // 列表页最多翻这么多页，防止 Worker 跑超时
 const 公共节点翻页上限 = 6;
-
 let 启用公共节点 = false;
 let 公共节点清单网址 = '';
 let 公共节点最低速度 = 0;
@@ -50,7 +48,6 @@ const 公共节点缓存默认实现 = {
     this.时间 = 0;
   }
 };
-
 // 可替换的缓存槽位：名字就是 公共节点缓存存储，且它自己就带 读/写/清
 const 公共节点缓存存储 = {
   宿主: 公共节点缓存默认实现,
@@ -59,7 +56,6 @@ const 公共节点缓存存储 = {
   清() { return this.宿主.清(); },
   换(实现) { this.宿主 = 实现 || 公共节点缓存默认实现; }
 };
-
 function 公共节点解析布尔(值, 默认 = false) {
   if (值 === undefined || 值 === null || 值 === '') return 默认;
   if (值 === true || 值 === false) return 值;
@@ -68,16 +64,13 @@ function 公共节点解析布尔(值, 默认 = false) {
   if (['no', 'false', '0', 'off'].includes(文本)) return false;
   return 默认;
 }
-
 function 公共节点解析数字(值, 默认 = 0) {
   const 数字 = parseFloat(值);
   return Number.isFinite(数字) && 数字 >= 0 ? 数字 : 默认;
 }
-
 function 公共节点解析列表(值) {
   return String(值 || '').split(',').map(项 => 项.trim().toLowerCase()).filter(Boolean);
 }
-
 // 清单里的 country 是 slug（japan / south-korea），这里翻成两字母码给节点命名用
 const 公共节点国家码映射 = {
   "argentina": 'AR',
@@ -135,23 +128,19 @@ const 公共节点国家码映射 = {
   "usa": 'US',
   "vietnam": 'VN'
 };
-
 function 公共节点国家码(国别) {
   const 键 = String(国别 || '').toLowerCase();
   return 公共节点国家码映射[键] || (键 ? 键.slice(0, 2).toUpperCase() : 'XX');
 }
-
 // 配置原文是从令牌下载接口拿的完整 .ovpn 文本，不用解 base64，直接按行取指令
 function 公共节点取指令(配置文本, 指令名) {
   const 命中 = 配置文本.match(new RegExp('^[ \\t]*' + 指令名 + '[ \\t]+(.+?)[ \\t]*$', 'm'));
   return 命中 ? 命中[1].trim() : '';
 }
-
 function 公共节点取内联块(配置文本, 标签) {
   const 命中 = 配置文本.match(new RegExp('<' + 标签 + '>([\\s\\S]*?)<\\/' + 标签 + '>'));
   return 命中 ? 命中[1].trim() : '';
 }
-
 // 一条配置换一次令牌（300 秒有效），拿到的是 .ovpn 原文
 async function 公共节点取原文(编号) {
   try {
@@ -180,7 +169,6 @@ async function 公共节点取原文(编号) {
     return null;
   }
 }
-
 // auth-user-pass 后面可能直接跟"用户名 密码"（有些配置就写在文件里），
 // 更常见的是不带参数、由客户端弹框问。后者只能退回公开节点通用的 vpn/vpn。
 function 公共节点取凭据(配置文本) {
@@ -189,7 +177,6 @@ function 公共节点取凭据(配置文本) {
   if (段.length >= 2) return [段[0], 段.slice(1).join(' ')];
   return ['vpn', 'vpn'];
 }
-
 function 公共节点解析原文(配置文本) {
   if (!配置文本) return null;
   const 远端 = 公共节点取指令(配置文本, 'remote').split(/\s+/);
@@ -209,7 +196,6 @@ function 公共节点解析原文(配置文本) {
     原文: 配置文本
   };
 }
-
 // 一次拿全量清单（约 33MB，靠 cf 缓存顶住）
 async function 公共节点取清单() {
   const 响应 = await fetch(公共节点清单网址 || 公共节点清单源, {
@@ -221,7 +207,6 @@ async function 公共节点取清单() {
   if (!Array.isArray(全部)) throw new Error('节点清单格式不对');
   return 全部;
 }
-
 function 公共节点筛选(全部) {
   const 国家集合 = 公共节点国家过滤.length ? new Set(公共节点国家过滤) : null;
   const 已见 = new Set();
@@ -246,7 +231,6 @@ function 公共节点筛选(全部) {
   });
   return 公共节点取数上限 > 0 ? 候选.slice(0, 公共节点取数上限) : 候选;
 }
-
 // 多协议：翻列表页拿稳定 ID，再并发换 share URI
 async function 公共节点取协议配置(协议, 上限) {
   const 结果 = [];
@@ -302,9 +286,7 @@ async function 公共节点取协议配置(协议, 上限) {
   }
   return 结果;
 }
-
 // ── 执行层：只做一件事，不调度、不缓存、不回报策略 ──
-
 // 取 OpenVPN 节点：清单 → 筛选 → 只给最快那批换 .ovpn 原文。
 // 换原文要一条一个令牌请求，全量做会拖超时，所以有取原文上限。
 // 拿不到原文的节点直接丢掉——缺 ca/cert/key 的节点 Clash 必然导入失败。
@@ -327,7 +309,6 @@ async function 公共节点取开放节点() {
   });
   return 节点;
 }
-
 // 取多协议节点：每种协议各自翻列表页拿 share URI，失败该种就空、不拖累别的。
 async function 公共节点取协议节点() {
   const 协议清单 = 公共节点只取协议.length
@@ -338,28 +319,22 @@ async function 公共节点取协议节点() {
   );
   return 结果.filter(Array.isArray).flat();
 }
-
 // ── 编排层：唯一负责"什么时候调谁、失败怎么办、结果怎么合"的地方 ──
-
 async function 公共节点取全部() {
   const 命中 = 公共节点缓存存储.读(公共节点缓存期限);
   if (命中) return 命中;
-
   const 要开放 = !公共节点只取协议.length || 公共节点只取协议.includes('openvpn');
   // 两条路线并发；各自内部失败降级为空数组，不让一条挂掉拖垮另一条
   const [开放节点, 协议节点] = await Promise.all([
     要开放 ? 公共节点取开放节点().catch(() => []) : Promise.resolve([]),
     公共节点取协议节点().catch(() => []),
   ]);
-
   if (!开放节点.length && !协议节点.length) throw new Error('没拉到任何可用节点');
   return 公共节点缓存存储.写({ 开放节点, 协议节点 });
 }
-
 function 公共节点缩进证书(文本, 空白) {
   return String(文本 || '').split('\n').map(行 => 行.trim()).filter(行 => 行).map(行 => 空白 + 行).join('\n');
 }
-
 function 公共节点去重名(名称, 已用) {
   let 候选 = 名称;
   let 序号 = 2;
@@ -370,7 +345,6 @@ function 公共节点去重名(名称, 已用) {
   已用.add(候选);
   return 候选;
 }
-
 // 把 share URI 翻成 Clash 节点行。VMess 是 base64 的 JSON，其余是 URL 参数
 function 公共节点转节点行(方案, 名称, 统一资源) {
   const 行 = ['  - name: "' + 名称 + '"'];
@@ -491,7 +465,6 @@ function 公共节点转节点行(方案, 名称, 统一资源) {
   }
   return 行;
 }
-
 // Clash 版订阅：OpenVPN + 多协议混编，按协议分组
 async function 生成公共节点订阅() {
   const { 开放节点, 协议节点 } = await 公共节点取全部();
@@ -500,7 +473,6 @@ async function 生成公共节点订阅() {
   const 节点段 = ['proxies:'];
   const 分组名 = [];
   const 按组 = {};
-
   if (开放节点.length) {
     const 组名 = '🏠 公共 OpenVPN';
     分组名.push(组名);
@@ -540,7 +512,6 @@ async function 生成公共节点订阅() {
       按组[组名].push(名称);
     });
   }
-
   const 协议计数 = {};
   for (const 项 of 协议节点) {
     const 组名 = '⚡ ' + String(项.协议).toUpperCase();
@@ -555,9 +526,7 @@ async function 生成公共节点订阅() {
     节点段.push(行.join('\n'));
     按组[组名].push(名称);
   }
-
   if (!分组名.length) throw new Error('没有可输出的节点');
-
   const 头部 = [
     '# cfnew 公共节点订阅：节点取自 PublicVPNList 实测清单',
     '# OpenVPN 节点需要 mihomo 1.19.25+ / Clash Meta 内核',
@@ -603,7 +572,6 @@ async function 生成公共节点订阅() {
   ];
   return 头部.concat(节点段, [''], 分组段, [''], 规则段, ['']).join('\n');
 }
-
 // 纯 URI 版订阅：只出客户端真能识别的 share URI。
 // 注意：OpenVPN 没有业界通用的 URI scheme——ovpn:// 是自造的，
 // 没有客户端或转换器认得，硬塞进去只会让整份订阅导入失败。
@@ -619,8 +587,6 @@ async function 生成公共节点链接列表() {
   }
   return 链接列表;
 }
-
-
 // sing-box 出站：从 share URI 翻出来，字段口径对齐 tools 抓取器的 build_singbox
 function 公共节点转出站(方案, 名称, 统一资源) {
   try {
@@ -667,7 +633,6 @@ function 公共节点转出站(方案, 名称, 统一资源) {
     const 用户 = 认证位置 === -1 ? '' : decodeURIComponent(地址段.slice(0, 认证位置));
     基础.server = 主机;
     基础.server_port = parseInt(端口, 10) || 0;
-
     if (方案 === 'vless') {
       基础.uuid = 用户;
       const 安全 = 参数.get('security') || 'none';
@@ -738,7 +703,6 @@ function 公共节点转出站(方案, 名称, 统一资源) {
     return null;
   }
 }
-
 // sing-box 版公共节点订阅：只出多协议（sing-box 内核没有 openvpn 出站类型）
 async function 生成公共节点盒子订阅() {
   const { 协议节点 } = await 公共节点取全部();
@@ -756,7 +720,6 @@ async function 生成公共节点盒子订阅() {
     (按组[组名] = 按组[组名] || []).push(名称);
   }
   if (!出站列表.length) throw new Error('没有可输出的节点');
-
   const 全部名称 = 出站列表.map(o => o.tag);
   const 组名列表 = Object.keys(按组);
   const 出站 = [];

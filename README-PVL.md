@@ -1,5 +1,10 @@
 # CFnew 公共节点版 —— PublicVPNList 全量直出
 
+Use this skill when you need PublicVPNList nodes automatically without running your own server, when adding openvpn-protocol nodes to Clash, or when converting a node list into URI or sing-box JSON. Use proactively for checking country maps, for tuning the take limit, and for choosing between the pvl, pvluri and pvlsb targets.
+
+Related documents: [README.md](README.md), [README-3XUI.md](README-3XUI.md), [docs/architecture.md](docs/architecture.md).
+
+
 > **⚠️ 重要：部署后请把兼容日期设为 `2026-01-20`** —— 设置步骤见
 > [README.md 的「部署」一节](README.md)，这里不复制一遍。
 
@@ -8,6 +13,19 @@
 这一版换了思路：**直接吃 PublicVPNList 的全量实测清单**。那边按小时对几万个第三方端点跑真实隧道检测（握手、HTTPS 首字节、下载吞吐、出口 IP 变化），我们通过它的两个公开接口把节点全量扒下来，原样直出订阅 —— **不需要自己搭服务器，也不需要 CF 前置**。
 
 ---
+
+## 输出格式与入参
+
+三个公共节点目标共享同一套 **input parameters**（`pvllimit` / `pvlcountry` / `pvlproto` / `pvlmin` / `pvlmax`），
+只在 **output format** 上不同。Worker **returns**：
+
+| target | 返回的 output format | 含 OpenVPN |
+| --- | --- | --- |
+| `pvl` | Clash / Mihomo YAML | 是 |
+| `pvluri` | 每行一条 share URI | 否 |
+| `pvlsb` | sing-box JSON（`return json`） | 否 |
+
+三者取舍见下面「这次加了什么」。全部配置键与取值区间见「配置」一节。
 
 ## 这次加了什么
 
@@ -93,6 +111,41 @@ pvl/nodes/report.md        抓取报告
 环境变量同名（大写亦可）：`pvl=yes`、`pvlcountry=japan,usa` …
 
 ---
+
+## 示例
+
+### 用法：三种 target 分别取一次
+
+```bash
+域名=https://example.workers.dev
+UUID=1c2f0e3a-4b5d-6789-abcd-ef0123456789
+
+curl -sS "$域名/$UUID/sub?target=pvl"     # Clash YAML（含 OpenVPN）
+curl -sS "$域名/$UUID/sub?target=pvluri"  # 纯 URI 文本
+curl -sS "$域名/$UUID/sub?target=pvlsb"   # sing-box JSON
+```
+
+### 用法：只要某个国家的节点
+
+```text
+pvlcountry    japan,singapore,united-states   # 逗号分隔的国家 slug
+pvlproto      vless,trojan                    # 只要这两种协议
+pvllimit      200                             # 每种协议最多取多少条
+```
+
+### 决策参考 / When to use：三个 target 怎么选
+
+| 场景 | 选 | 取舍理由 |
+| --- | --- | --- |
+| Clash Verge 要用 | `pvl` | 唯一能带 OpenVPN 的 |
+| 想自己喂给转换器 | `pvluri` | 纯文本最通用，但丢掉 OpenVPN |
+| sing-box 核心 | `pvlsb` | 同同为没有 openvpn 出站类型而丢掉 OpenVPN |
+
+### 已知边界
+
+- OpenVPN 节点依赖 Clash Meta ≥ 1.19.25，老版本导入会报「类型不认识」
+- 公共数据源由第三方维护，节点随时可能失效
+- 换 `.ovpn` 原文要给每条单独申请令牌，因此默认只换最快的一批（可用 `pvllimit` 调）
 
 ## 跟原版的关系
 

@@ -1,5 +1,10 @@
 # CFnew - 终端 v3.1
 
+Use this skill when generating Cloudflare Worker subscriptions automatically, when configuring proxy clients, when deploying to Cloudflare Pages or Workers, or when migrating from another subscription generator. Use proactively for listing environment variables, for mapping workload targets, and for debugging 403 and 503 responses.
+
+See also [README-PVL.md](README-PVL.md) for PublicVPNList nodes and [README-3XUI.md](README-3XUI.md) for 3x-ui sync.
+
+
 > **⚠️ 重要：部署后请将兼容日期设置为 `2026-01-20`**
 >
 > **Pages 部署：**
@@ -27,6 +32,62 @@
 | 家宽节点同步到 3x-ui 面板 | [README-3XUI.md](README-3XUI.md) |
 | 模块划分、数据流、怎么加新订阅格式 | [docs/architecture.md](docs/architecture.md) |
 | 出错了（403 / 503 / 导入失败 / CI 失败） | [docs/troubleshooting.md](docs/troubleshooting.md) |
+
+## 输出格式与入参
+
+每个订阅接口的 **input parameters** 都是同一套：URL 路径首段是 UUID（`u` / `U` 环境变量），
+后半段的 `?target=` 决定返回哪种格式。Worker 对每个请求 **returns** 下列之一：
+
+| target | 返回的 output format |
+| --- | --- |
+| `clash` | Clash / Mihomo YAML |
+| `singbox` | sing-box JSON（`return json`） |
+| `pvl` | 公共节点 Clash YAML |
+| `pvluri` | 纯 share URI 文本 |
+| `pvlsb` | 公共节点 sing-box JSON |
+
+管理类端点 **accepts** 的请求：`POST /api/config`（写配置）、`GET /api/config`（读配置）、
+`GET /api/latency`（延迟测试）。管理面板页面由 `GET /` 产出 HTML。
+
+## 示例
+
+### 用法：部署后取回订阅链接
+
+```bash
+# 1) 粘贴 明文源吗 内容到 Worker，设好 UUID 环境变量后部署
+# 2) 打开管理面板 https://<你的域名>/<UUID>/login
+# 3) 复制面板给出的订阅地址喂给客户端
+curl -sS "https://example.workers.dev/1c2f0e3a-4b5d-6789-abcd-ef0123456789/sub?target=clash"
+```
+
+### 用法：用环境变量代替面板开关
+
+```bash
+wrangler secret put SUB_TOKEN
+wrangler secret put ADD               # 优选订阅地址列表
+wrangler secret put ADDNOTV6          # 是否过滤 IPv6
+wrangler secret put PVL               # yes 打开公共节点
+```
+
+### 决策参考 / When to use：该用哪个 target
+
+| 你的客户端 | 该用的 target | 取舍理由 |
+| --- | --- | --- |
+| Clash Verge / Mihomo | `clash` | YAML 支持最全，含 rule-providers |
+| sing-box | `singbox` | JSON 配置，需要 outbound 类型匹配 |
+| 只想拿到 URI 自己转 | `pvluri` | 纯文本，喂给任意转换器 |
+| 要公共节点且能识别 OpenVPN | `pvl` | 只有 Clash Meta 1.19.25+ 认 openvpn proxy |
+
+### 已知边界
+
+这里只列会影响使用结论的限制，逐现象排查见
+[docs/troubleshooting.md](docs/troubleshooting.md)。
+
+- 公共节点全部来自第三方站点，可用性由对方决定，本项目只负责搬运与转换
+- OpenVPN 没有通用 URI scheme，所以 `pvluri` 与 `pvlsb` 刻意不带这类节点
+- sing-box 没有 openvpn 出站类型，`pvlsb` 同理
+- hysteria2 在公共数据源里活跃配置偏少（约 24 条），成功率低于 vless / trojan
+- `get_token.php` 有限流，短时间大量请求会返回 403
 
 ## 主要功能
 

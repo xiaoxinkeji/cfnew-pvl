@@ -9,8 +9,14 @@ on:
       # 改了任一模块源码都要重新构建产物，否则部署用的还是旧模块
       - '明文源吗'
       - 'src/pvl.js'
-      - 'src/page.js'
       - 'src/i18n.js'
+      - 'src/panel.js'
+      - 'src/page-css.js'
+      - 'src/page-html.js'
+      - 'src/page-js-a.js'
+      - 'src/page-js-b.js'
+      - 'src/page-js-c.js'
+      - 'src/page-js-d.js'
       - 'tools/build.js'
 
 # 提交混淆产物需要写权限，显式声明，不依赖仓库默认设置

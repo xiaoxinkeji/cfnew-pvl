@@ -40,13 +40,67 @@ const 模块表 = [
     加工: 剥声明,      // src 里存整条语句，内联时只要对象字面量
   },
   {
-    名: 'page',
-    占位: '/* __PAGE_MODULE__ */',
-    源: 'page.js',
-    赋值式: true,      // 同上
-    加工: 剥声明,      // src 里存整条语句，内联时只要模板字符串
+    名: 'page-css',
+    占位: '/* __PAGE_CSS_MODULE__ */',
+    源: 'page-css.js',
+    赋值式: true,
+    加工: 剥模板壳,
+  },
+  {
+    名: 'page-html',
+    占位: '/* __PAGE_HTML_MODULE__ */',
+    源: 'page-html.js',
+    赋值式: true,
+    加工: 剥模板壳,
+  },
+  // 前端 JS 拆成 4 段，每段都在 600 行以内 —— 整块塞进一个模板字符串有 2100 行，
+  // 单独看不清结构。内联时按顺序拼回同一个模板字符串，产物与拆分前完全一致。
+  { 名: 'page-js-a', 槽: 'page', 占位: '/* __PAGE_JS_A_MODULE__ */', 源: 'page-js-a.js', 赋值式: true, 加工: 剥模板壳 },
+  { 名: 'page-js-b', 槽: 'page', 占位: '/* __PAGE_JS_B_MODULE__ */', 源: 'page-js-b.js', 赋值式: true, 加工: 剥模板壳 },
+  { 名: 'page-js-c', 槽: 'page', 占位: '/* __PAGE_JS_C_MODULE__ */', 源: 'page-js-c.js', 赋值式: true, 加工: 剥模板壳 },
+  { 名: 'page-js-d', 槽: 'page', 占位: '/* __PAGE_JS_D_MODULE__ */', 源: 'page-js-d.js', 赋值式: true, 加工: 剥模板壳 },
+  {
+    名: 'panel',
+    占位: '/* __PANEL_MODULE__ */',
+    源: 'panel.js',
+    赋值式: true,
+    加工: 剥模板壳,   // 管理面板脚本同样是 HTML 模板片段，只取内容拼进外层模板
+    // 锚点必须唯一：`<html lang="...">` 这行在首页模板里也有一份，一字不差。
+    // 所以除了锚串，还要指定取第几次出现——面板那份排在首页那份之后。
+    锚起: '<html lang="${语言值}" dir="${是否值236 ?',
+    锚止: 'var 本地值20198 = false;',
+    锚序: 2,
   },
 ];
+
+// 同一个槽里的多个模块按顺序拼进一个模板字符串。槽起/槽止用来在"主文件已内联"
+// 时把整块还原回占位——只靠逐段匹配会失败：段内容一旦在 src 侧改过就对不上了。
+const 槽表 = {
+  page: {
+    起: '  const 值页面 = `',
+    // 不能只用 `` `; `` 当止点——模板内部可能出现同样的两字符，会切错位置。
+    // 用整块模板唯一的收尾串来定界。
+    止: '</html>`;',
+    成员: ['page-css', 'page-html', 'page-js-a', 'page-js-b', 'page-js-c', 'page-js-d'],
+  },
+};
+
+/** 主文件已经内联过某个槽时，把整块换回占位串 */
+function 还原槽(主, 槽名) {
+  const 槽 = 槽表[槽名];
+  const 起位 = 主.indexOf(槽.起);
+  if (起位 === -1) return 主;
+  const 止位 = 主.indexOf(槽.止, 起位 + 槽.起.length);
+  if (止位 === -1) return 主;
+  const 占位串 = 槽.成员
+    .map(n => 模块表.find(m => m.名 === n).占位)
+    .join('');
+  return 主.slice(0, 起位 + 槽.起.length) + 占位串 + 主.slice(止位);
+}
+
+// 多个赋值式模块拼进同一个模板字符串时的连接顺序。
+// 每个片段剥掉外壳后是纯文本（不含反引号），拼接时直接相邻即可。
+const 页拼接 = ['page-css', 'page-html', 'page-js-a', 'page-js-b', 'page-js-c', 'page-js-d'];
 
 function 读模块(名) {
   const p = path.join(根, 'src', 名);
@@ -101,6 +155,19 @@ function 剥声明(模块源码) {
   throw new Error('src 模块里的值没有闭合');
 }
 
+/**
+ * 剥掉模板字面量的反引号外壳，只留模板内容。
+ * 用于"多个片段拼进同一个模板字符串"的场景——每个片段自带反引号的话，
+ * 拼出来会是 `a``b``c` 这种语法错误。
+ */
+function 剥模板壳(模块源码) {
+  const 值 = 剥声明(模块源码);
+  if (!值.startsWith('`') || !值.endsWith('`')) {
+    throw new Error('src 模块不是模板字面量，无法用 剥模板壳');
+  }
+  return 值.slice(1, -1);
+}
+
 /** 取模块期望的内联正文列表（一个模块可能占多段） */
 function 期望片段(模块) {
   const 正文 = 模块.加工 ? 模块.加工(读模块(模块.源)) : 读模块(模块.源);
@@ -112,9 +179,26 @@ function 期望片段(模块) {
 function 内联一个(主, 模块, 片段列表) {
   if (!主.includes(模块.占位)) {
     if (模块.赋值式) {
-      // 赋值式没有边界注释，但可以根据 src 正文本身把旧内容还原回占位
-      for (const 段 of 片段列表) {
-        if (主.includes(段)) 主 = 主.replace(段, () => 模块.占位);
+      // 赋值式没有边界注释。优先按首末行锚点还原（最稳，内容改过也对得上），
+      // 锚点不够时才退回逐段匹配。
+      if (模块.锚起 && 模块.锚止
+          && 主.includes(模块.锚起) && 主.includes(模块.锚止)) {
+        // 锚串可能在正文里出现多次（首页和面板的 <html> 头一字不差），
+        // 用 锚序 指定取第几次出现，避免切到另一份模板上。
+        let 起 = -1;
+        for (let k = 0; k < (模块.锚序 || 1); k++) {
+          起 = 主.indexOf(模块.锚起, 起 + 1);
+          if (起 === -1) break;
+        }
+        const 止 = 起 === -1 ? -1 : 主.indexOf(模块.锚止, 起);
+        if (起 !== -1 && 止 !== -1 && 止 > 起) {
+          主 = 主.slice(0, 起) + 模块.占位 + 主.slice(止 + 模块.锚止.length);
+        }
+      }
+      if (!主.includes(模块.占位)) {
+        for (const 段 of 片段列表) {
+          if (主.includes(段)) 主 = 主.replace(段, () => 模块.占位);
+        }
       }
       if (!主.includes(模块.占位)) return null;
     } else {
@@ -151,6 +235,11 @@ function 读内联片段(主, 模块) {
 
 function 构建() {
   let 主 = fs.readFileSync(主文件, 'utf8');
+  // 先按槽整体还原，再逐模块内联 —— 这样重复构建一定幂等
+  for (const 槽名 of Object.keys(槽表)) {
+    const 成员 = 槽表[槽名].成员.map(n => 模块表.find(m => m.名 === n));
+    if (成员.every(m => !主.includes(m.占位))) 主 = 还原槽(主, 槽名);
+  }
   for (const 模块 of 模块表) {
     const 结果 = 内联一个(主, 模块, 期望片段(模块));
     if (结果 === null) {

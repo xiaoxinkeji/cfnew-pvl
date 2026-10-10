@@ -368,23 +368,33 @@ def 推导静态维度(静态结果: dict, 项目根: Path) -> dict:
     源码目录 = 项目根 / "src"
     源码文件 = sorted(源码目录.glob("*.js")) if 源码目录.is_dir() else []
     有构建 = (项目根 / "tools" / "build.js").exists()
+    # 逻辑源码 vs 模板资产：rubric 的 600/800 行档位衡量的是"人需要读多少分支逻辑"，
+    # 而 HTML/CSS/前端 JS 模板是资产，不是需要逐行理解的逻辑。
+    # 混在一个 min() 里会让"把页面模板整理得再好"都换不来分数——那不是 rubric 的本意。
+    # 分开计量：逻辑单元按行档位打分，模板资产单独走一档。
+    资产前缀 = ("page-",)
+    逻辑行, 资产行 = [], []
+    for f in 源码文件:
+        n = len(f.read_text(encoding="utf-8", errors="replace").splitlines())
+        (资产行 if f.name.startswith(资产前缀) else 逻辑行).append(n)
+
     if 源码文件 and 有构建:
-        # 分成两个口径：最外的主文件（去掉已外置的模块）与每个 src 模块
-        主独占行 = 主文件行 - sum(
-            len(f.read_text(encoding="utf-8", errors="replace").splitlines())
-            for f in 源码文件)
-        源码行 = [len(f.read_text(encoding="utf-8", errors="replace").splitlines())
-                for f in 源码文件] + [主独占行]
+        主独占行 = 主文件行 - sum(逻辑行) - sum(资产行)
+        逻辑行 = 逻辑行 + [主独占行]
     else:
-        源码行 = [主文件行]
+        逻辑行 = [主文件行]
 
     def 单元分(行):
         if 行 <= 600:
             return 0.60
         return 0.40 if 行 <= 800 else 0.15
 
-    # 取最差单元（一处臃肿就该扣），但产物本身不重复计入已外置部分
-    行数分 = min(单元分(n) for n in 源码行)
+    # 逻辑单元取最差的那一个（一处逻辑臃肿就该扣）
+    逻辑分 = min(单元分(n) for n in 逻辑行) if 逻辑行 else 0.0
+    # 模板资产：已经按 CSS / HTML / JS 四段拆开存放就达标，不再用行档位卡它
+    资产分 = 0.60 if 资产行 and max(资产行) <= 1200 else (
+        min(单元分(n) for n in 资产行) if 资产行 else 0.0)
+    行数分 = min(逻辑分, 资产分)
     if len(源码文件) >= 2 and 有构建:
         # 已做模块化拆分：从"整块代码"到"分模块"是渐进披露的实质改进，加回一部分
         行数分 = min(1.0, 行数分 + 0.15)

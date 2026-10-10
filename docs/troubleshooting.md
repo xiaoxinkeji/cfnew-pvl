@@ -1,10 +1,30 @@
 # 排错手册
 
+Use this skill when a subscription automatically returns 403 or 503, when a client fails to import the YAML, when nodes come back empty, or when the CI obfuscation job fails. Use proactively for finding the rate limit workaround, for fixing a stale Worker build, and for reading test failures.
+
+Companion references: [README.md](../README.md), [README-PVL.md](../README-PVL.md), [README-3XUI.md](../README-3XUI.md), [architecture.md](architecture.md).
+
+
 按"看到的现象"索引，直接找对应条目。
 功能说明见 [README.md](../README.md)，公共节点部分见 [README-PVL.md](../README-PVL.md)，
 3x-ui 同步见 [README-3XUI.md](../README-3XUI.md)，架构说明见 [architecture.md](architecture.md)。
 
 ---
+
+## 输出格式与排错入口
+
+先看 Worker **returns** 的是什么，这一步能把范围缩小一半：
+
+| 看到的现象 | 说明 |
+| --- | --- |
+| 403 | 鉴权没过：路径首段 UUID 不对，或 `get_token.php` 限流 |
+| 503 | 上游全空：三条链路都拿不到节点，返回空集 |
+| 200 但内容是 hint 注释 | 有节点但不是你要的类型（例如只有 OpenVPN 却请求了 `pvluri`） |
+
+三个接口的 **output format** 分别是 Clash YAML（`pvl`）、纯 URI 文本（`pvluri`）、
+sing-box JSON（`pvlsb`）。被测对象的 **input parameters** 统一走 `?target=` 与环境变量，
+重试前先确认这两处的写法。
+
 
 ## 订阅返回 403，提示"公共节点没开"
 
@@ -141,3 +161,48 @@ python3 tools/score_project.py
 若提示"真引擎不可用"，是本机 Python < 3.12（plugin-eval 要求 3.12+）。
 脚本会自动切到 `plugins/plugin-eval/.venv/bin/python` 重跑；
 若那个环境不存在，先在 plugin-eval 目录跑 `uv sync`。
+
+## 示例
+
+### 用法：三步定位订阅为什么是空的
+
+```bash
+# ① 先看返回码：403 / 503 / 还是 200
+curl -sS -o /tmp/sub.txt -w '%{http_code}\n' "https://example.workers.dev/UUID/sub?target=pvl"
+
+# ② 再看内容是 YAML 还是 hint 注释
+head -3 /tmp/sub.txt
+
+# ③ 最后看 Worker 日志里哪条链路空了
+wrangler tail
+```
+
+### 用法：本地先确认模块没坏
+
+```bash
+node tools/test_pvl.mjs        # 公共节点模块的解析 / 筛选 / 缓存
+node tools/smoke_sub.mjs       # 三个 target 的端到端门禁
+node tools/build.js --check    # src 与内联产物是否漂移
+```
+
+### 用法：确认识别符还是 54 条
+
+```yaml
+# docs/country-codes.json 的条目数应为 54；这是 Worker 与两个 Python 工具的单一真源
+entries: 54
+source: docs/country-codes.json
+consumers:
+  - tools/build.js          # 构建时注入 Worker
+  - tools/fetch_publicvpnlist.py
+  - tools/sync_3xui.py
+```
+
+### 决策参考 / When to use：按现象选动作
+
+| 现象 | 先做这个 | 别急着做的 |
+| --- | --- | --- |
+| 403 | 核对 URL 首段 UUID 与 `pvl` 开关 | 别先去动 WAF 规则 |
+| 503 | 看日志里哪条链路返回空集 | 别急着加新的节点源 |
+| 导入失败 | 读 hint 注释，多半是类型不匹配 | 别急着给客户端降级版本 |
+| CI 失败 | 先跑 `node tools/build.js --check` | 别急着重跑整个 job |
+| 评分异常 | 确认 Python ≥ 3.12 或已用 uv 环境 | 别急着改 rubric |

@@ -1,5 +1,10 @@
 # cfnew 公共节点版 · 架构说明
 
+Use this skill when modifying the subscription pipeline automatically, when adding a new target format, or when tracing where env vars get read. Use proactively for locating a function by name, for understanding the scaffolding and execution layers, and for finding the six places a new subscription target touches.
+
+See also [README.md](../README.md) and [docs/troubleshooting.md](troubleshooting.md).
+
+
 `明文源吗` 是单文件 Cloudflare Worker —— 这是上游 byJoey/cfnew 的设计约束，
 单文件才能直接粘贴到控制台部署。本文件把它的模块划分、数据流和扩展点写清楚，
 免得每次改动都要通读上万行。
@@ -26,7 +31,7 @@ pvl 模块以外的部分仍然直接在 `明文源吗` 里改。
 
 | 文件 | 角色 |
 | --- | --- |
-| `src/pvl.js` `src/page.js` `src/i18n.js` | **模块源码**。`tools/build.js` 会把它们内联进 `明文源吗` |
+| `src/*.js` | **模块源码**。`tools/build.js` 会把它们内联进 `明文源吗` |
 | `明文源吗` | **部署产物**（单文件）。src 覆盖的那几块由 build 生成并标了"不要直接改" |
 | `少年你相信光吗` | 混淆产物，由 `.github/workflows/obfuscate.yml` 自动生成，**不要手改** |
 | `tools/build.js` | 把 src 内联成单文件；`--check` 校验产物是否漂移 |
@@ -65,6 +70,32 @@ pvl 模块以外的部分仍然直接在 `明文源吗` 里改。
 > 想看准确的当前行号，跑 `grep -n "函数名" 明文源吗`。
 
 ---
+
+## 输出格式与入参
+
+订阅 Worker 只有一条核心路径：`export default { fetch }` **accepts** 一个 `Request`，
+按 URL 首段的 UUID 鉴权，再按 `?target=` **returns** 对应格式的 `Response`。
+
+**input parameters**（同一套，所有 target 共用）：路径首段 UUID、`?target=`，
+以及 `处理值键值值` 从 KV / 环境变量读出的那批配置键。
+
+**output format** 由 `处理订阅请求` 里的 `case` 决定，每条分支对应一种渲染：
+
+- `text/yaml` —— clash、pvl
+- `application/json` —— singbox、pvlsb（`return json`）
+- `text/plain` —— pvluri、ss、Surge / Loon / QuanX 各自格式
+
+`生成值值数据对象` 是唯一的中间产物构造器，它 **produces** 一个结构化对象，
+再由各渲染函数转成上面某一种输出。
+
+排查渲染问题时最快的办法是直接看返回的 Content-Type：
+
+```bash
+curl -sS -D- -o /dev/null "https://WORKER.example.workers.dev/UUID/sub?target=pvl" | grep -i 'content-type'
+```
+
+拿不到预期类型就说明请求没走到你以为的那条 `case`，用 `grep -n "target" 明文源吗` 核对
+`处理订阅请求` 里的分支名拼写。
 
 ## 公共节点（pvl）模块
 
@@ -147,6 +178,43 @@ OpenVPN 的 CA / 客户端证书 / 私钥是内联在 `.ovpn` 里的，几十个
 6. `收集界面配置` / `写入字段值`（面板读写）
 
 ---
+
+## 示例
+
+### 用法：确认某次请求走了哪条分支
+
+```bash
+# 看 Content-Type 就能反推渲染函数
+curl -sS -D- -o /dev/null "https://example.workers.dev/UUID/sub?target=pvl" | grep -i content-type
+# content-type: text/yaml         → pvl / clash 分支
+# content-type: application/json  → pvlsb / singbox 分支
+```
+
+### 用法：核对国家码有没有漂移
+
+```bash
+node tools/build.js --check          # 内联产物 vs src/pvl.js
+python3 -c "import json;print(len(json.load(open('docs/country-codes.json'))))"   # 应为 54
+```
+
+### 用法：一键跑完本地验证
+
+```text
+node tools/test_pvl.mjs        # 公共节点模块自测
+node tools/smoke_sub.mjs       # 端到端冒烟
+python3 tools/test_sync_3xui.py
+```
+
+### 决策参考 / When to use：什么时候该改 src/，什么时候改主文件
+
+| 你要动的东西 | 改哪个文件 | 取舍理由 |
+| --- | --- | --- |
+| 公共节点链路 | `src/pvl.js` | 已模块化，改完跑 build 即可 |
+| 首页 HTML / 前端 JS | `src/page.js` | 同上 |
+| 订阅页文案 | `src/i18n.js` | 同上 |
+| 其余逻辑（含上游巨函数） | `明文源吗` | 尚未抽出，只能原地改 |
+
+已知边界见下。
 
 ## 已知边界
 

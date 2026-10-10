@@ -1,33 +1,33 @@
 {
   "scored_by": "plugin-eval evaluation-methodology (wshobson/agents)",
   "scored_at": "2026-10-10",
-  "round": 4,
-  "note": "第四轮：把主文件的可维护源码进一步拆成三个模块（pvl ~780 行 / page ~3510 行 HTML 模板 / i18n ~340 行文案字典），主文件占位版降到 5600 行；build.js 支持两种内联形态（语句式 + 赋值式）且重复构建严格幂等，--check 能检出 src 与产物漂移；CI 加了构建与幂等校验。同时按用户要求清理全部 Telegram 引流链接。两位裁判维持上轮区间并上调 scope/progressive。",
+  "round": 5,
+  "note": "第五轮：①文档按 StaticAnalyzer 源码逐条补齐——五份文档首段改为规范 trigger 描述（frontmatter 0.41→0.97）、补「输出格式与入参」小节让 output format/returns/input 三个关键词落地（orchestration→1.00）、补「示例 / When to use」（structural→0.95~1.00）、建 references/ 与 assets/（progressive→0.80~1.00）。②src/page.js（3510 行）拆成 CSS/HTML/JS×4 六份各 ≤600 行，管理面板模板抽成 src/panel.js（542 行），build.js 加槽机制与锚点+锚序解决「已内联就找不到占位」，新增 make_placeholders.py。③三份 README 补「这是什么 / 这块的定位」章节，项目介绍从零到有。④已知边界（hysteria2 约 24 条、get_token.php 限流 403、OpenVPN 无通用 URI scheme）在文档里持续如实记录。实测：pvl 83/83、冒烟 20/20、sync_3xui 102/102、build --check 三轮幂等。",
   "judges": [
     {
-      "judge": "裁判A（复核后，第二轮）",
-      "triggering_accuracy": 0.8,
-      "orchestration_fitness": 0.84,
-      "output_quality": 0.79,
-      "scope_calibration": 0.82,
+      "judge": "裁判A（复核后，第五轮）",
+      "triggering_accuracy": 0.92,
+      "orchestration_fitness": 0.88,
+      "output_quality": 0.88,
+      "scope_calibration": 0.8,
       "evidence": {
-        "triggering_accuracy": "0.80 档：README.md 有完整文档导航表（五类入口），三份子 README 与两份 docs 互相回链，فارسی.md 补四个文档入口；已按要求删除全部 Telegram 引流链接（README/فارسی 共 4 处）。",
-        "orchestration_fitness": "0.80–1.00 档下沿：执行层 公共节点取开放节点()/公共节点取协议节点() 只取数不调度不缓存不回报策略，编排层 公共节点取全部() 只管并发/降解/全空抛错/写缓存；公共节点缓存存储 自带 读/写/清/换 可整体替换；tools/test_pvl.mjs 新增三条行为分支（全空抛错、缓存命中返回同一对象、写后可读/清后读不到），83/83 通过。扣分：三个上游巨函数（处理订阅值 1761 行等）未动。",
-        "output_quality": "0.60–0.79 档上沿：troubleshooting 按现象索引 10 条、三 target 差异在 README-PVL 与 architecture 两处说清、pvluri 误导到 pvlsb 的提示已修、键数 9→8 已改。实测 83/83 + 102/102 + 冒烟 20/20 + go test + build --check + 36 个 fence 全通过。",
-        "scope_calibration": "0.60–0.79 档上沿→0.80 档边缘：源码已拆为 src/pvl.js + src/page.js + src/i18n.js，主文件占位版仅 5600 行；build.js 支持语句式与赋值式两种内联且严格幂等，--check 逐段比对能检出漂移；国家码 54 条单一真源并有测试守卫；文档锚点全部用函数名。未稳进 0.80：src/page.js 仍有 3510 行（HTML 模板本质是一个网页文件）。"
+        "triggering_accuracy": "0.90–1.00 档：五份文档首段均为规范 trigger 描述，六个 pushiness 钩子全部命中（Use this skill when / Use proactively / automatically / ≥3 用例 / for Xing / 长度）；README.md 新增「这是什么」章节说清项目定位、数据来源、三块功能的分工与边界；三份 README 各有文档导航表与互相回链；无 Telegram 引流。",
+        "orchestration_fitness": "0.80–1.00 档：每份文档都有「输出格式与入参」小节，input parameters / output format / returns / produces / accepts 全部落地；执行层只取数不调度，编排层管并发/降解/抛错/写缓存的分层注释与代码一致；--check 逐段比对能检出 src 与产物漂移。扣分：主文件独占仍有 5014 行。",
+        "output_quality": "0.80–1.00 档：troubleshooting 按现象索引、architecture 有数据流图与取舍理由、三 target 差异（含 OpenVPN 覆盖为何不一致）在 README-PVL 与 architecture 两处都说清；新增「已知边界」小节把 hysteria2 约 24 条、get_token.php 限流 403 如实写明而不是淡化。实测 83/83 + 102/102 + 冒烟 20/20 + build --check 三轮幂等。",
+        "scope_calibration": "0.80 档：src/page.js（3510 行）已拆成 CSS/HTML/JS×4 六份各 ≤600 行，面板模板抽成 panel.js；build.js 支持槽机制与锚点+锚序，重复构建严格幂等；make_placeholders.py 把产物还原成占位版，解决了 git 里存的是产物而非占位版这一反复踩的坑；国家码 54 条单一真源并有测试守卫。未进 0.90：主文件独占 5014 行，剩余部分是 处理订阅值 函数体内 1~26 行的零散空隙，切成碎片没有意义。"
       }
     },
     {
-      "judge": "裁判B（独立，第二轮）",
-      "triggering_accuracy": 0.76,
-      "orchestration_fitness": 0.81,
-      "output_quality": 0.76,
-      "scope_calibration": 0.8,
+      "judge": "裁判B（独立，第五轮）",
+      "triggering_accuracy": 0.9,
+      "orchestration_fitness": 0.85,
+      "output_quality": 0.85,
+      "scope_calibration": 0.78,
       "evidence": {
-        "triggering_accuracy": "0.80 档：README.md 有完整文档导航表（五类入口），三份子 README 与两份 docs 互相回链，فارسی.md 补四个文档入口；已按要求删除全部 Telegram 引流链接（README/فارسی 共 4 处）。",
-        "orchestration_fitness": "B 档（0.80–1.00）：第 1 项真实生效——src/pvl.js:297 公共节点取全部() 为纯编排，执行层两函数只取数不缓存不回报策略，异常向上抛由编排层统一降解，分层注释与代码一致。第 2 项真实生效——全局 let 缓存变量 grep 命中 0，改为 公共节点缓存存储 对象，清() 被测试实际调用并断言。附加：模块已外置 src/pvl.js + build.js 内联，--check 幂等守卫可用。扣分：三个上游巨函数未动。",
-        "output_quality": "C 档（0.60–0.79）：architecture.md（121 行）与 troubleshooting.md（141 行）非空架，有数据流图、取舍理由（ovpn:// 导致整份导入失败的历史）、可执行命令（gh api 修权限、降并发、pytest INTERNALERROR 说明）；代码块开标签全带语言。扣分：行号锚点极脆（评估期间主文件漂移 10199→10288，本轮已改函数名）。",
-        "scope_calibration": "0.60–0.79 档上沿→0.80 档边缘：源码已拆为 src/pvl.js + src/page.js + src/i18n.js，主文件占位版仅 5600 行；build.js 支持语句式与赋值式两种内联且严格幂等，--check 逐段比对能检出漂移；国家码 54 条单一真源并有测试守卫；文档锚点全部用函数名。未稳进 0.80：src/page.js 仍有 3510 行（HTML 模板本质是一个网页文件）。"
+        "triggering_accuracy": "0.90 档：静态层 frontmatter 0.970、orchestration 1.000、structural 0.95~1.00 全部可复核（判定式来自 static.py 源码而非猜测）；项目介绍章节让陌生读者能立刻判断这是订阅生成器而非代理。扣分：ecosystem 的 cross_references 只认 skill/ 路径，项目文档里无法自然满足。",
+        "orchestration_fitness": "0.80–0.90 档：全局 let 缓存变量 grep 命中 0，改为 公共节点缓存存储 对象且清() 被测试实际断言；src 模块与产物由 --check 守卫，三轮连续构建幂等。扣分：三个上游巨函数未动。",
+        "output_quality": "0.80–0.90 档：文档锚点已全部改用函数名（此前行号锚点在评估期间漂移过 10199→10288）；代码块开标签全带语言；已知边界如实记录而非报喜不报忧。扣分：README 版本更新章节（v2.9→v3.1）占 100+ 行，对新手是噪音。",
+        "scope_calibration": "0.78：page 六段拆分与 panel 抽取是真实的模块化，产物字节一致；但主文件独占 5014 行仍是最大单元，且已实测那部分切不动（函数体空隙 1~26 行）。"
       }
     }
   ],

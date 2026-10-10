@@ -6,7 +6,10 @@ on:
     branches:
       - '**'  # 仅匹配分支推送，排除标签推送
     paths:
+      # 改了模块源码也要重新构建产物，否则部署用的还是旧模块
       - '明文源吗'
+      - 'src/pvl.js'
+      - 'tools/build.js'
 
 # 提交混淆产物需要写权限，显式声明，不依赖仓库默认设置
 permissions:
@@ -27,6 +30,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+
+      # 把 src/pvl.js 内联进 明文源吗。占位版不能部署，必须先构建。
+      # 幂等：已经是产物时脚本直接跳过。
+      - name: Inline modules into single-file worker
+        run: node tools/build.js
 
       - name: Install Obfuscator
         run: npm install javascript-obfuscator
@@ -100,7 +108,7 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           # 混淆器用了随机标识符，每次产物都不同；只在真正变化时提交
-          git add '少年你相信光吗'
+          git add '少年你相信光吗' '明文源吗'
           if git diff --staged --quiet; then
             echo "No changes to commit, the obfuscated file is already up-to-date."
             exit 0

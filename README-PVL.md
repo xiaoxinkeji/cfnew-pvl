@@ -1,19 +1,7 @@
 # CFnew 公共节点版 —— PublicVPNList 全量直出
 
-> **⚠️ 重要：部署后请将兼容日期设置为 `2026-01-20`**
->
-> **Pages 部署：**
-> 1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com/)
-> 2. 进入 **Workers 和 Pages** → 选择你的 Pages 项目
-> 3. 点击 **设置** → **运行时**
-> 4. 找到 **兼容性日期**，选择 `2026-01-20`，点击 **保存**
-> 5. 返回 **部署** → **创建部署** → 上传文件
->
-> **Worker 部署：**
-> 1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com/)
-> 2. 进入 **Workers 和 Pages** → 选择你的 Worker
-> 3. 点击 **设置** → **运行时**
-> 4. 找到 **兼容性日期**，选择 `2026-01-20`，点击 **保存**
+> **⚠️ 重要：部署后请把兼容日期设为 `2026-01-20`** —— 设置步骤见
+> [README.md 的「部署」一节](README.md)，这里不复制一遍。
 
 基于 [byJoey/cfnew](https://github.com/byJoey/cfnew) v3.1 改造。原项目的「家宽链式」靠 VPN Gate 志愿者共享的住宅宽带做落地，节点是别人的、随时会掉，还得自己有 CF 节点当前置。
 
@@ -23,12 +11,18 @@
 
 ## 这次加了什么
 
-### 1. 两种新的订阅格式
+### 1. 三种新的订阅格式
 
-| 订阅链接 | 输出 | 用途 |
-| --- | --- | --- |
-| `?target=pvl`（同 `pv`、`public`） | Clash / Mihomo YAML | 客户端列表里的「CLASH 公共」按钮 |
-| `?target=pvluri` | 纯 URI 文本（base64 之前） | 客户端列表里的「公共连接」按钮，可再喂给任意转换器 |
+| 订阅链接 | 输出 | 含 OpenVPN | 用途 |
+| --- | --- | --- | --- |
+| `?target=pvl`（同 `pv`、`public`） | Clash / Mihomo YAML | ✅ | 客户端列表里的「CLASH 公共」按钮 |
+| `?target=pvluri` | 纯 URI 文本（base64 之前） | ❌ | 客户端列表里的「公共连接」按钮，可再喂给任意转换器 |
+| `?target=pvlsb`（同 `pvl-sb`、`pvlbox`） | sing-box JSON | ❌ | 客户端列表里的「SING-BOX 公共」按钮 |
+
+OpenVPN 那列为什么不一致：Clash Meta 1.19.25+ 有 `openvpn` proxy 类型，
+而 **sing-box 内核没有 openvpn 出站类型**，OpenVPN 也**没有业界通用的 URI scheme**
+（早期版本试过自造 `ovpn://`，结果整份订阅导入失败）。
+所以只有 `pvl` 能带 OpenVPN，另两个刻意不带 —— 详见 [docs/architecture.md](docs/architecture.md)。
 
 跟家宽链式（`target=vg`）的区别：**不做链式**。节点原样出去，出口就是节点自己的 IP，不套 CF 前置。想要家宽落地继续用 `vg`，两个功能互不干扰。
 
@@ -36,7 +30,7 @@
 
 **OpenVPN** —— 一次请求拿全量清单，再逐条换配置原文：
 
-```
+```text
 GET  /local/api/vpn-data.php?status=all     → 45,722 行全量清单（约 33 MB，3,874 个实测在线）
 POST /get_token.php         {id}            → 300 秒有效的下载令牌
 GET  /download.php?token=…                  → .ovpn 配置原文
@@ -44,7 +38,7 @@ GET  /download.php?token=…                  → .ovpn 配置原文
 
 **多协议**（VLESS / Trojan / VMess / Shadowsocks / Hysteria2）—— 翻列表页拿稳定 ID，再直接取 share URI：
 
-```
+```text
 GET  /{protocol}/?per_page=100              → 列表页，抠出 64 位十六进制配置 ID
 GET  /protocols/download.php?protocol=…&id=…&format=json
                                             → {"config_uri": "vless://…"} 直接可用
@@ -68,7 +62,7 @@ python3 tools/fetch_publicvpnlist.py --refresh           # 忽略本地清单缓
 
 产出：
 
-```
+```text
 pvl/nodes/openvpn.json     OpenVPN 全量元数据（含实测速度/延迟/来源）
 pvl/nodes/protocols.json   多协议 share URI 全集
 pvl/sub/all.txt            全协议合并订阅
@@ -83,7 +77,7 @@ pvl/nodes/report.md        抓取报告
 
 ### 4. 配置面板新增「公共节点」区块
 
-开启后客户端列表多出两个按钮，并且能细调：
+开启后客户端列表多出三个按钮，并且能细调：
 
 | 配置项 | 键 | 说明 |
 | --- | --- | --- |
@@ -107,7 +101,7 @@ pvl/nodes/report.md        抓取报告
 新增部分：
 
 - `明文源吗` 里新增「公共节点（PublicVPNList）」模块（在家宽链式之前）
-- 新增 9 个配置键、2 个订阅目标、2 个客户端按钮、1 个配置区块
+- 新增 8 个配置键（`pvl` `pvlURL` `pvlmin` `pvlmax` `pvllimit` `pvlcountry` `pvlproto` `pvlraw`）、3 个订阅目标（pvl / pvluri / pvlsb）、3 个客户端按钮、1 个配置区块
 - 新增 `tools/` 目录（抓取器 + 离线测试），`pvl/` 目录（抓取产物）
 - 混淆版 `少年你相信光吗` 由 GitHub Actions 从 `明文源吗` 自动生成，已同步
 
@@ -130,7 +124,8 @@ node tools/test_pvl.mjs
 - **节点是第三方共享的**。`pvl/sub/all.txt` 里那条会被反复扫描，掉线、限速、改端口是常态。自动回落组会往下换。
 - **OpenVPN 节点需要 Clash Meta / mihomo 1.19.25 以上内核**，老内核不认 `openvpn` 这个 proxy 类型。VLESS / Trojan / SS / VMess / Hysteria2 任意内核都能用。
 - **PublicVPNList 只做技术检测**（能否建隧道、出口 IP 是否变化、吞吐和延迟），不验证运营者身份、日志策略或司法管辖。别拿公共端点跑敏感账号。
-- **限流真实存在**。OpenVPN 清单约 33 MB，Worker 侧靠 `cf.cacheTtl` 顶住；令牌接口（`get_token.php`）高频会 403，所以 Worker 只给最快的一批换原文，抓取器则做了退避重试。
+- **限流真实存在**：清单约 33 MB，令牌接口高频会 403。应对方式与排查步骤统一写在
+  [docs/troubleshooting.md](docs/troubleshooting.md)，这里不重复展开。
 - 多协议接口返回的是**检测通过**的配置，实测成功率约 90%（hysteria2 偏低，活跃配置少）。拿不到的会被静默跳过。
 
 ---
@@ -141,7 +136,7 @@ node tools/test_pvl.mjs
 想把家宽节点直接灌进 3x-ui 面板（自动建 inbound、定时同步、挂了自动换节点），
 用 Go 写的 `cmd/homesync`，见 [README-3XUI.md](README-3XUI.md)。
 
-```
+```bash
 ./homesync -mode xray -limit 30          # 多协议家宽节点，开箱即用
 sudo ./homesync -mode ovpn -country japan,usa   # OpenVPN 家宽落地，需 root
 ```
@@ -151,10 +146,10 @@ sudo ./homesync -mode ovpn -country japan,usa   # OpenVPN 家宽落地，需 roo
 
 ## 部署
 
-- **Pages**：上传 `明文源吗` 重命名为 `_worker.js`，或用 Release 里的 `Pages.zip`
-- **Worker**：直接粘贴 `明文源吗` 内容
-- 兼容日期务必设成 `2026-01-20`
-- 部署完进管理面板勾「启用公共节点」，保存即可
+部署方式与主项目完全一致 —— 见 [README.md 的「部署」一节](README.md)。
+本功能只有一个额外步骤：
+
+- 部署完进管理面板勾「启用公共节点」，保存即可（或加环境变量 `pvl=yes`）
 
 ---
 

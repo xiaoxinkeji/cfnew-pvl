@@ -80,7 +80,7 @@
 
 **不要手改 `少年你相信光吗`。** 它由 CI 从 `明文源吗` 自动生成：
 
-```
+```text
 改 明文源吗 → 推送 → .github/workflows/obfuscate.yml → 生成混淆版 → 自动提交回仓库
 ```
 
@@ -121,8 +121,9 @@ python3 tools/fetch_publicvpnlist.py --proto-only --workers 4 --sleep 1.0 --limi
 `tools/test_sync_3xui.py` 是脚本式断言（末尾 `sys.exit`），**直接跑**：
 
 ```bash
-python3 tools/test_sync_3xui.py   # 102 项
-node tools/test_pvl.mjs           # 65 项
+python3 tools/test_sync_3xui.py   # 3x-ui 同步器自测（脚本式，直接跑）
+node tools/test_pvl.mjs           # 公共节点模块自测
+node tools/smoke_sub.mjs          # Worker 端到端冒烟（三个订阅目标的门禁）
 ```
 
 不要用 `pytest` 收集它 —— import 阶段就会 `sys.exit`，pytest 会 INTERNALERROR。

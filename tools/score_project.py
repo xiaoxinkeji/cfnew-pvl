@@ -63,6 +63,22 @@ BADGES = [
 DEFAULT_ENGINE = "/vol2/1000/破甲/wshobson-agents/plugins/plugin-eval"
 
 
+def 开围栏语言(文本: str) -> list[str]:
+    """返回每个代码块的"开 fence"上的语言标签。
+
+    fence 成对出现：奇数次是开（可能带语言），偶数次是闭（永远空）。
+    直接用正则抓所有 ``` 会把闭合行也算成无标签块。
+    """
+    标签 = []
+    在内 = False
+    for 行 in 文本.splitlines():
+        if 行.startswith("```"):
+            if not 在内:
+                标签.append(行[3:].strip())
+            在内 = not 在内
+    return 标签
+
+
 def grade(score: float) -> str:
     if score >= 0.90:
         return "A"
@@ -363,11 +379,16 @@ def 推导静态维度(静态结果: dict, 项目根: Path) -> dict:
     编排词 = len(re.findall(r"编排|调度|协调|派发|orchestrat|coordinat|dispatch", 小文本))
     编排 = max(0.0, 0.85 - min(0.5, 编排词 * 0.02))
 
+    # code_template_quality 静态分量：代码块是否标了语言。
+    # 注意 fence 成对出现，闭合那行永远无标签——必须按开/闭配对计数，
+    # 否则每个块都被算成"1 个有标签 + 1 个无标签"，比例恒被压到 50% 以下。
     带标签 = 无标签 = 0
     for 名 in 项目根.glob("README*.md"):
-        块 = re.findall(r"^```(\w*)", 名.read_text(encoding="utf-8", errors="replace"), re.M)
-        带标签 += sum(1 for b in 块 if b)
-        无标签 += sum(1 for b in 块 if not b)
+        for 语言 in 开围栏语言(名.read_text(encoding="utf-8", errors="replace")):
+            if 语言:
+                带标签 += 1
+            else:
+                无标签 += 1
     模板 = 带标签 / (带标签 + 无标签) if (带标签 + 无标签) else 0.0
 
     return {

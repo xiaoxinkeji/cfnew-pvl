@@ -80,6 +80,19 @@ import os
 import random
 import signal
 import subprocess
+import json as _json
+import os as _os
+
+def _load_country_codes():
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'docs', 'country-codes.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            return _json.load(f)
+    except Exception:
+        return {}
+
+_COUNTRY_CODES = _load_country_codes()
+
 import sys
 import time
 import urllib.error
@@ -400,19 +413,9 @@ def check_api(res, what):
 # ---------------------------------------------------------------- 节点 -> inbound
 
 def country_code(slug):
-    table = {
-        'japan': 'JP', 'south-korea': 'KR', 'usa': 'US', 'united-states': 'US',
-        'russia': 'RU', 'thailand': 'TH', 'vietnam': 'VN', 'indonesia': 'ID',
-        'canada': 'CA', 'uk': 'GB', 'united-kingdom': 'GB', 'argentina': 'AR',
-        'netherlands': 'NL', 'germany': 'DE', 'france': 'FR', 'singapore': 'SG',
-        'hong-kong': 'HK', 'taiwan': 'TW', 'india': 'IN', 'malaysia': 'MY',
-        'philippines': 'PH', 'australia': 'AU', 'brazil': 'BR', 'mexico': 'MX',
-        'spain': 'ES', 'italy': 'IT', 'poland': 'PL', 'sweden': 'SE',
-        'finland': 'FI', 'norway': 'NO', 'switzerland': 'CH', 'ukraine': 'UA',
-        'turkey': 'TR', 'iran': 'IR', 'czech-republic': 'CZ', 'romania': 'RO',
-    }
-    key = (slug or '').lower()
-    return table.get(key, key[:2].upper() if key else 'XX')
+    # 单一真源：docs/country-codes.json（cfnew Worker 与 fetch_publicvpnlist 共用同一份）
+    return _COUNTRY_CODES.get(str(slug or '').lower(), '') or (
+        str(slug or '')[:2].upper() if slug else 'XX')
 
 
 def slugify(text):

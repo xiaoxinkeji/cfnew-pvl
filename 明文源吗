@@ -2681,6 +2681,13 @@ async function 获取加密客户端问候配置(域名522) {
   }
 }
 // ======================= 公共节点（PublicVPNList 全量直出） =======================
+
+// ↓↓↓ 公共节点模块由 tools/build.js 从 src/pvl.js 内联而来，不要直接改这块 ↓↓↓
+// 公共节点（PublicVPNList）模块源码。
+// 这个文件不直接部署——tools/build.js 会把它内联进 明文源吗（部署必须是单文件）。
+// 单独放这里是为了让模块能独立阅读、独立评审，不再淹没在万行主文件里。
+// 改完记得跑 node tools/build.js。
+
 // 之前家宽链式要自己搭节点、还要靠 VPN Gate 的志愿者共享，掉线是常态。
 // 这里换成直接吃 PublicVPNList 的全量检测清单：那边按小时实测吞吐/RTT，
 // OpenVPN 走清单 + get_token.php 换 .ovpn，多协议走 download.php 直接拿 share URI。
@@ -2709,8 +2716,34 @@ let 公共节点取数上限 = 120;
 let 公共节点国家过滤 = [];
 let 公共节点只取协议 = [];
 let 公共节点要原文 = true;
-let 公共节点缓存 = null;
-let 公共节点缓存时间 = 0;
+// 缓存的默认实现。它挂在 公共节点缓存存储.宿主 槽位上，模块里的函数只通过
+// 公共节点缓存存储.读/写/清 三个转发方法访问——换实现（测试桩、将来的 KV）时
+// 只要替换宿主，模块代码一行都不用改。
+const 公共节点缓存默认实现 = {
+  数据: null,
+  时间: 0,
+  读(期限) {
+    return (this.数据 && Date.now() - this.时间 < 期限) ? this.数据 : null;
+  },
+  写(数据) {
+    this.数据 = 数据;
+    this.时间 = Date.now();
+    return 数据;
+  },
+  清() {
+    this.数据 = null;
+    this.时间 = 0;
+  }
+};
+
+// 可替换的缓存槽位：名字就是 公共节点缓存存储，且它自己就带 读/写/清
+const 公共节点缓存存储 = {
+  宿主: 公共节点缓存默认实现,
+  读(期限) { return this.宿主.读(期限); },
+  写(数据) { return this.宿主.写(数据); },
+  清() { return this.宿主.清(); },
+  换(实现) { this.宿主 = 实现 || 公共节点缓存默认实现; }
+};
 
 function 公共节点解析布尔(值, 默认 = false) {
   if (值 === undefined || 值 === null || 值 === '') return 默认;
@@ -2732,18 +2765,60 @@ function 公共节点解析列表(值) {
 
 // 清单里的 country 是 slug（japan / south-korea），这里翻成两字母码给节点命名用
 const 公共节点国家码映射 = {
-  japan: 'JP', 'south-korea': 'KR', usa: 'US', 'united-states': 'US', russia: 'RU',
-  thailand: 'TH', vietnam: 'VN', indonesia: 'ID', canada: 'CA', uk: 'GB',
-  'united-kingdom': 'GB', argentina: 'AR', netherlands: 'NL', germany: 'DE',
-  france: 'FR', singapore: 'SG', 'hong-kong': 'HK', taiwan: 'TW', india: 'IN',
-  malaysia: 'MY', philippines: 'PH', australia: 'AU', brazil: 'BR', mexico: 'MX',
-  spain: 'ES', italy: 'IT', poland: 'PL', sweden: 'SE', finland: 'FI',
-  norway: 'NO', switzerland: 'CH', ukraine: 'UA', turkey: 'TR', iran: 'IR',
-  'czech-republic': 'CZ', romania: 'RO', austria: 'AT', 'south-africa': 'ZA',
-  'new-zealand': 'NZ', ireland: 'IE', belgium: 'BE', denmark: 'DK',
-  hungary: 'HU', portugal: 'PT', greece: 'GR', israel: 'IL', estonia: 'EE',
-  latvia: 'LV', lithuania: 'LT', bulgaria: 'BG', croatia: 'HR',
-  kazakhstan: 'KZ', belarus: 'BY', 'united-arab-emirates': 'AE'
+  "argentina": 'AR',
+  "australia": 'AU',
+  "austria": 'AT',
+  "belarus": 'BY',
+  "belgium": 'BE',
+  "brazil": 'BR',
+  "bulgaria": 'BG',
+  "canada": 'CA',
+  "croatia": 'HR',
+  "czech-republic": 'CZ',
+  "denmark": 'DK',
+  "estonia": 'EE',
+  "finland": 'FI',
+  "france": 'FR',
+  "germany": 'DE',
+  "greece": 'GR',
+  "hong-kong": 'HK',
+  "hungary": 'HU',
+  "india": 'IN',
+  "indonesia": 'ID',
+  "iran": 'IR',
+  "ireland": 'IE',
+  "israel": 'IL',
+  "italy": 'IT',
+  "japan": 'JP',
+  "kazakhstan": 'KZ',
+  "latvia": 'LV',
+  "lithuania": 'LT',
+  "malaysia": 'MY',
+  "mexico": 'MX',
+  "netherlands": 'NL',
+  "new-zealand": 'NZ',
+  "norway": 'NO',
+  "philippines": 'PH',
+  "poland": 'PL',
+  "portugal": 'PT',
+  "romania": 'RO',
+  "russia": 'RU',
+  "singapore": 'SG',
+  "south-africa": 'ZA',
+  "south-korea": 'KR',
+  "spain": 'ES',
+  "sweden": 'SE',
+  "switzerland": 'CH',
+  "taiwan": 'TW',
+  "thailand": 'TH',
+  "turkey": 'TR',
+  "uk": 'GB',
+  "ukraine": 'UA',
+  "united-arab-emirates": 'AE',
+  "united-kingdom": 'GB',
+  "united-states": 'US',
+  "usa": 'US',
+  "vietnam": 'VN'
 };
 
 function 公共节点国家码(国别) {
@@ -2913,44 +2988,57 @@ async function 公共节点取协议配置(协议, 上限) {
   return 结果;
 }
 
-async function 公共节点取全部() {
-  const 现在 = Date.now();
-  if (公共节点缓存 && 现在 - 公共节点缓存时间 < 公共节点缓存期限) return 公共节点缓存;
-  const 要开放 = !公共节点只取协议.length || 公共节点只取协议.includes('openvpn');
+// ── 执行层：只做一件事，不调度、不缓存、不回报策略 ──
+
+// 取 OpenVPN 节点：清单 → 筛选 → 只给最快那批换 .ovpn 原文。
+// 换原文要一条一个令牌请求，全量做会拖超时，所以有取原文上限。
+// 拿不到原文的节点直接丢掉——缺 ca/cert/key 的节点 Clash 必然导入失败。
+async function 公共节点取开放节点() {
+  const 清单 = await 公共节点取清单();
+  if (!清单 || !清单.length) return [];
+  const 选中 = 公共节点筛选(清单);
+  if (!公共节点要原文) return [];
+  const 要原文 = 选中.slice(0, 公共节点取原文上限);
+  const 原文列表 = await Promise.all(要原文.map(行 => 公共节点取原文(行.id)));
+  const 已见端点 = new Set();
+  const 节点 = [];
+  要原文.forEach((行, 下标) => {
+    const 解析 = 公共节点解析原文(原文列表[下标]);
+    if (!解析 || !解析.证书) return;
+    const 键 = 解析.地址 + ':' + 解析.端口;
+    if (已见端点.has(键)) return;
+    已见端点.add(键);
+    节点.push({ 行, 解析 });
+  });
+  return 节点;
+}
+
+// 取多协议节点：每种协议各自翻列表页拿 share URI，失败该种就空、不拖累别的。
+async function 公共节点取协议节点() {
   const 协议清单 = 公共节点只取协议.length
     ? 公共节点协议页.filter(项 => 公共节点只取协议.includes(项))
     : 公共节点协议页.slice();
+  const 结果 = await Promise.all(
+    协议清单.map(协议 => 公共节点取协议配置(协议, 公共节点取数上限))
+  );
+  return 结果.filter(Array.isArray).flat();
+}
 
-  const 开放任务 = 要开放 ? 公共节点取清单().catch(() => null) : Promise.resolve(null);
-  const 协议任务 = Promise.all(协议清单.map(协议 => 公共节点取协议配置(协议, 公共节点取数上限).catch(() => [])));
-  const [清单结果, 协议结果] = await Promise.all([开放任务, 协议任务]);
+// ── 编排层：唯一负责"什么时候调谁、失败怎么办、结果怎么合"的地方 ──
 
-  const 开放节点 = [];
-  if (清单结果) {
-    const 选中 = 公共节点筛选(清单结果);
-    // 换 .ovpn 原文要一条一个令牌请求，全量做会拖超时，只给最快那批换
-    const 要原文 = 公共节点要原文 ? 选中.slice(0, 公共节点取原文上限) : [];
-    const 原文列表 = await Promise.all(要原文.map(行 => 公共节点取原文(行.id)));
-    const 已见端点 = new Set();
-    要原文.forEach((行, 下标) => {
-      const 解析 = 公共节点解析原文(原文列表[下标]);
-      if (!解析 || !解析.证书) return;
-      const 键 = 解析.地址 + ':' + 解析.端口;
-      if (已见端点.has(键)) return;
-      已见端点.add(键);
-      开放节点.push({ 行, 解析 });
-    });
-    // 拿不到 .ovpn 原文就不出 OpenVPN 节点：缺 ca/cert/key 的节点 Clash 必然导入失败，
-    // 与其塞一堆连不上的废节点让客户端报错，不如这一路留空、只出多协议节点。
-  }
-  const 协议节点 = [];
-  for (const 组 of 协议结果) {
-    if (Array.isArray(组)) 协议节点.push(...组);
-  }
+async function 公共节点取全部() {
+  const 命中 = 公共节点缓存存储.读(公共节点缓存期限);
+  if (命中) return 命中;
+
+  const 要开放 = !公共节点只取协议.length || 公共节点只取协议.includes('openvpn');
+  // 两条路线并发；各自内部失败降级为空数组，不让一条挂掉拖垮另一条
+  const [开放节点, 协议节点] = await Promise.all([
+    要开放 ? 公共节点取开放节点().catch(() => []) : Promise.resolve([]),
+    公共节点取协议节点().catch(() => []),
+  ]);
+
   if (!开放节点.length && !协议节点.length) throw new Error('没拉到任何可用节点');
-  公共节点缓存 = { 开放节点, 协议节点, 时间: 现在 };
-  公共节点缓存时间 = 现在;
-  return 公共节点缓存;
+  return 公共节点缓存存储.写({ 开放节点, 协议节点 });
 }
 
 function 公共节点缩进证书(文本, 空白) {
@@ -3374,7 +3462,7 @@ async function 生成公共节点盒子订阅() {
     outbounds: 出站
   }, null, 2);
 }
-
+// ↑↑↑ 公共节点模块结束 ↑↑↑
 // ======================= 家宽链式（住宅宽带当落地） =======================
 // 跟之前的套娃一个思路：cfnew 自己的节点在前面带路，落地换成网友共享出来的家庭宽带。
 // 客户端会把落地节点的整条隧道塞进前置节点里走，握手走 CF 边缘，出网是住宅 IP。

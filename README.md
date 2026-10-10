@@ -19,6 +19,16 @@
 
 [Telegram 交流群](https://t.me/+ft-zI76oovgwNmRh)
 
+**文档导航**
+
+| 想找什么 | 去哪 |
+| --- | --- |
+| 部署、环境变量、订阅地址 | 本文件 |
+| PublicVPNList 公共节点订阅 | [README-PVL.md](README-PVL.md) |
+| 家宽节点同步到 3x-ui 面板 | [README-3XUI.md](README-3XUI.md) |
+| 模块划分、数据流、怎么加新订阅格式 | [docs/architecture.md](docs/architecture.md) |
+| 出错了（403 / 503 / 导入失败 / CI 失败） | [docs/troubleshooting.md](docs/troubleshooting.md) |
+
 ## 主要功能
 
 - 多协议支持：VLESS、Trojan、xhttp，可以同时启用多个
@@ -226,7 +236,7 @@ hs          # 装完打开管理菜单
 **开启**：配置管理里勾上「开启家宽链式」（或者加环境变量 `jk=yes`），
 客户端列表会多出一个「CLASH 家宽」，点它就是家宽专属订阅。也可以直接用：
 
-```
+```text
 https://你的域名/{UUID}/sub?target=vg
 ```
 
@@ -234,7 +244,7 @@ https://你的域名/{UUID}/sub?target=vg
 
 **经典轻量版**：把文件顶部配置区的 `家宽链式` 改成 `true` 再部署，订阅地址后面加 `?target=vg`：
 
-```
+```text
 https://你的域名/{UUID}?target=vg
 ```
 
@@ -258,7 +268,7 @@ https://你的域名/{UUID}?target=vg
 
 想直接吃 PublicVPNList 的全量实测节点、不套 CF 前置的，用这个：
 
-```
+```text
 https://你的域名/{UUID}/sub?target=pvl      # Clash / Mihomo YAML
 https://你的域名/{UUID}/sub?target=pvluri   # 纯 share URI 文本
 https://你的域名/{UUID}/sub?target=pvlsb    # sing-box JSON
@@ -384,7 +394,7 @@ v3.0 开始，「指定地区 (wk)」留空就是官方直连，这也是默认�
 
 带认证就在前面加 `用户名:密码@`：
 
-```
+```text
 user:pass@1.2.3.4:1080
 socks5://user:pass@1.2.3.4:1080
 http://user:pass@1.2.3.4:8080
@@ -471,7 +481,7 @@ v2.9.4 新增。在 VLESS/Trojan 分享链接的 `path` 字段里追加查询参
 > ⚠️ **`p` 和 `wk` 互斥**：设置 `p` 后会直接使用指定的 ProxyIP，`wk` 的地区匹配逻辑被完全跳过，两者同时写只有 `p` 生效。
 
 path 示例：
-```
+```text
 # 指定 ProxyIP（不要同时写 wk）
 /?ed=2048&p=1.1.1.1
 /?ed=2048&p=proxy.example.com:443

@@ -15,8 +15,8 @@ PublicVPNList 全量节点抓取器
 产出：
   nodes/openvpn.json     全量 OpenVPN 元数据（供筛选/统计）
   nodes/protocols.json   多协议 share URI 全集
-  sub/openvpn.txt        纯 URI 订阅（OpenVPN 走 ovpn:// 内联，其余原样）
-  sub/all.txt            全协议合并订阅
+  sub/all.txt            纯 URI 订阅（只含多协议：OpenVPN 无通用 URI scheme）
+  sub/all_base64.txt     同上，base64 整包
   sub/clash.yaml         Clash/Mihomo 配置（OpenVPN 节点需要 1.19.25+）
   sub/singbox.json       sing-box 出站配置
   nodes/report.md        抓取报告
@@ -116,22 +116,18 @@ CN_NAME = {
     'san-marino': '圣马力诺', 'liechtenstein': '列支敦士登', 'gibraltar': '直布罗陀',
 }
 
-FLAG = {
-    'japan': 'JP', 'south-korea': 'KR', 'usa': 'US', 'russia': 'RU',
-    'thailand': 'TH', 'vietnam': 'VN', 'indonesia': 'ID', 'canada': 'CA',
-    'uk': 'GB', 'united-kingdom': 'GB', 'united-states': 'US',
-    'argentina': 'AR', 'netherlands': 'NL', 'germany': 'DE', 'france': 'FR',
-    'singapore': 'SG', 'hong-kong': 'HK', 'taiwan': 'TW', 'india': 'IN',
-    'malaysia': 'MY', 'philippines': 'PH', 'australia': 'AU', 'brazil': 'BR',
-    'mexico': 'MX', 'spain': 'ES', 'italy': 'IT', 'poland': 'PL',
-    'sweden': 'SE', 'finland': 'FI', 'norway': 'NO', 'switzerland': 'CH',
-    'ukraine': 'UA', 'turkey': 'TR', 'iran': 'IR', 'czech-republic': 'CZ',
-    'romania': 'RO', 'austria': 'AT', 'south-africa': 'ZA', 'new-zealand': 'NZ',
-    'ireland': 'IE', 'belgium': 'BE', 'denmark': 'DK', 'hungary': 'HU',
-    'portugal': 'PT', 'greece': 'GR', 'israel': 'IL', 'estonia': 'EE',
-    'latvia': 'LV', 'lithuania': 'LT', 'bulgaria': 'BG', 'croatia': 'HR',
-    'kazakhstan': 'KZ', 'belarus': 'BY', 'united-arab-emirates': 'AE',
-}
+# 国家码映射的单一真源在 docs/country-codes.json（cfnew Worker 与 sync_3xui 共用同一份），
+# 这里加载它，避免同一份表在三处各写一遍后逐渐漂移。
+def _load_country_codes():
+    import json as _json
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'docs', 'country-codes.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            return _json.load(f)
+    except Exception:
+        return {}
+
+FLAG = _load_country_codes()
 
 
 def log(msg):

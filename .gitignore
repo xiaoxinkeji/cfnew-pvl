@@ -19,6 +19,10 @@ cmd/homesync/.sync_state.json
 tools/.sync_state.json
 
 # Go 构建产物
+# 只忽略仓库根的可执行文件：裸写 homesync 会把 cmd/homesync/ 源码目录一起吞掉
 dist/
-homesync
-homesync.exe
+/homesync
+/homesync.exe
+
+# 面板地址缓存（不含 token，但含面板子路径）
+cmd/homesync/.xui-url

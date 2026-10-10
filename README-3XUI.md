@@ -44,7 +44,28 @@ PublicVPNList 家宽节点
 
 ---
 
-## 安装
+## 一键安装（推荐）
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/xiaoxinkeji/cfnew-pvl/main/install.sh)
+```
+
+装完输入 `hs` 打开管理菜单。脚本会：装二进制、建 systemd/OpenRC 服务、开机自启、
+探测本机 3x-ui（自动读端口/basePath/token，不用手工填）。
+
+环境变量可以预先定制（重装时不会覆盖你改过的值）：
+
+```bash
+MODE=ovpn LIMIT=30 COUNTRY=japan,usa INTERVAL=1800 bash install.sh
+```
+
+Alpine 默认不带 bash：
+
+```bash
+apk add bash && bash <(curl -fsSL .../install.sh)
+```
+
+### 手动安装
 
 ```bash
 go build -o homesync ./cmd/homesync
@@ -57,6 +78,21 @@ sh cmd/homesync/build.sh
 # homesync-linux-amd64 / arm64 / 386
 # homesync-darwin-amd64 / arm64
 # homesync-windows-amd64.exe
+```
+
+### 管理菜单 `hs`
+
+不带参数进交互菜单，带参数当普通命令用：
+
+```bash
+hs              # 交互菜单
+hs sync         # 立即同步一次
+hs dry          # 试跑，不碰面板
+hs list         # 面板 inbound 列表（带 * 的是本工具建的）
+hs clean        # 清理本工具建的 inbound
+hs log          # 跟日志
+hs update       # 更新
+hs uninstall    # 卸载
 ```
 
 ---
@@ -73,7 +109,16 @@ x-ui setting -getApiToken true -tokenName home -tokenScope admin
 
 `node-sync` 权限也够用——它的白名单含 `inbounds/add`、`del/:id`、`update/:id` 和 `server/restartXrayService`。但 `admin` 更省事。
 
-### 2. 配置
+### 2. 配置（装了 3x-ui 的话这步通常可以跳过）
+
+本机装了 3x-ui 时会**自动探测**：从 `x-ui setting -show` 读端口和 basePath，
+从 `x-ui setting -getApiToken` 取 token 并落盘复用（`/var/lib/homesync/.xui-token`，0600）。
+
+> **为什么不每次都新取 token**：`x-ui setting -getApiToken` 每调一次面板就新生成一个
+> 且**不回收旧的**，重启多了会把面板的 `api_tokens` 表撑爆。所以落盘后先验证旧的还能用，
+> 能用就不新建。
+
+手工指定时用环境变量：
 
 ```bash
 export XUI_URL="http://127.0.0.1:54321"
@@ -206,13 +251,17 @@ go test -tags=e2e ./...            # 端到端：起模拟面板跑完整同步�
 
 ```
 cmd/homesync/
-  main.go         CLI + 两条同步路线
+  main.go         CLI + 两条同步路线 + settings.json 读取
   panel.go        3x-ui API 客户端（Bearer、success 语义、只清理自建）
+  detect.go       本机 3x-ui 自动探测（端口/basePath/token 复用）
   parse.go        share URI -> inbound 载荷
   fetch.go        PublicVPNList 抓取（清单缓存、令牌退避、并发换 URI）
   ovpn.go         .ovpn 解析/改写/起停/等 tun、状态持久化
-  *_test.go       29 项单测 + 4 项端到端
+  *_test.go       44 项单测 + 4 项端到端
   build.sh        交叉编译 6 个平台
+
+install.sh        一键安装（systemd / OpenRC，包管理器分派，配置迁移）
+hs.sh             管理菜单（交互 + 命令行双模）
 ```
 
 ---
@@ -224,3 +273,8 @@ cmd/homesync/
 - **PublicVPNList 限流真实存在**。令牌接口高频会 403，抓取器有退避重试；清单（33 MB）落本地缓存，1 小时内复用。
 - **节点是第三方共享的**，掉线常态。`-daemon` 模式会体检并自动换节点。
 - **别把 `config.json` 提交上去**。已加 `.gitignore`，工具启动时会检查权限并警告。
+- **面板会保留未被占用的 tag**。核对过 `resolveInboundTag`：提交的 tag 若没被别的人
+  占用就原样保留，所以 `pvl-home-` 前缀策略成立；万一撞了，面板会自动生成新 tag，
+  那时清理会漏——`hs list` 里看 `*` 标记能发现。
+- **vmess 字段类型不统一**。实测各家生成器的 `aid` / `port` 有时是字符串、有时是数字，
+  所以解析层用 `interface{}` 兜住再转，不用固定类型（否则会 unmarshal 失败丢节点）。

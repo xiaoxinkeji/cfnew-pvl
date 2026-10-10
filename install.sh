@@ -84,6 +84,9 @@ Type=simple
 ExecStart=${BIN} -dir ${WORK_DIR}
 Restart=on-failure
 RestartSec=30
+# 退出码 1 表示配置缺失（没装 3x-ui / 没给 token），这种要人去配，
+# 无限重试只会刷日志。其余失败（网络抖动、面板临时不通）照常重试。
+RestartPreventExitStatus=1
 # 路线 A 要给足时间清理 tun 与 openvpn 子进程
 TimeoutStopSec=60
 KillMode=mixed
@@ -247,10 +250,19 @@ svc_enable_start
 
 echo "[5/5] 就绪"
 sleep 3
-svc_is_active && echo "      服务运行中（${INIT_SYS}）" || {
+if svc_is_active; then
+  echo "      服务运行中（${INIT_SYS}）"
+elif [[ -x /usr/local/x-ui/x-ui ]]; then
+  # 装了面板却起不来，是真故障
   echo "      服务启动失败，看 $(svc_logs_hint)" >&2
   exit 1
-}
+else
+  # 没装面板时必然起不来（缺地址/token），这不是安装失败
+  echo -e "      服务已装好但暂时没跑：本机没装 3x-ui，缺面板地址。\n" \
+       "      装好面板、或配好 XUI_URL / XUI_TOKEN 后执行：\n" \
+       "        hs restart\n" \
+       "      现在也能先试跑（不需要面板）：hs dry"
+fi
 
 IP=$(curl -s --max-time 8 http://api.ipify.org || echo "<本机IP>")
 echo
@@ -263,6 +275,6 @@ echo "  输入 hs 打开管理菜单"
 echo
 echo "  注意：面板 API token 存在 ${WORK_DIR}/.xui-token（0600），别泄露。"
 echo "  3x-ui 的 inbound 协议白名单里没有 openvpn，所以："
-echo "    - ${MODE} = xray  直接建多协议 inbound，开箱即用"
-echo "    - ${MODE} = ovpn  走 openvpn -> tun0 -> tunnel inbound，需 root"
+echo "    - xray  直接建多协议 inbound，开箱即用"
+echo "    - ovpn  走 openvpn -> tun0 -> tunnel inbound，需 root（改模式：hs -> 8）"
 echo

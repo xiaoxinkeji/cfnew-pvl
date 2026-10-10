@@ -146,7 +146,20 @@
 - Pages视频教程：https://www.youtube.com/watch?v=JhVxJChDL-E
 - Snippets视频教程：https://www.youtube.com/watch?v=xeFeH3Akcu8
 
-### 部署
+#
+### 家宽节点同步到 3x-ui（一键安装）
+
+配套的 Go 工具 `homesync`：把家宽节点自动灌进 3x-ui 面板，定时同步、挂了自动换节点。
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/xiaoxinkeji/cfnew-pvl/main/install.sh)
+hs          # 装完打开管理菜单
+```
+
+单文件静态二进制、零第三方依赖，会自动探测本机 3x-ui（读端口/basePath/token）。
+完整说明见 [README-3XUI.md](README-3XUI.md)。
+
+## 部署
 
 订阅每15分钟自动优选一次
 

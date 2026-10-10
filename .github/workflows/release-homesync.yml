@@ -1,0 +1,71 @@
+name: 发布 homesync
+
+# install.sh 从 releases/latest 下预编译包，所以每次改了 cmd/homesync 就发一版。
+# 只在 Go 源码或安装脚本变动时触发，改 Worker 或文档不发布。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/homesync/**'
+      - 'install.sh'
+      - 'hs.sh'
+      - '.github/workflows/release-homesync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: 取版本号
+        id: ver
+        run: echo "tag=homesync-v$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 交叉编译
+        run: |
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 linux/386; do
+            GOOS="${target%/*}"; GOARCH="${target#*/}"
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+              go build -trimpath -ldflags="-s -w" \
+              -o "dist/homesync-${GOOS}-${GOARCH}" ./cmd/homesync
+          done
+
+      - name: 打包
+        run: |
+          cd dist
+          for f in homesync-*; do
+            # 安装脚本和菜单一起打进去，装完就有 hs 命令
+            cp ../hs.sh .
+            tar czf "${f}.tar.gz" "$f" hs.sh
+            rm -f hs.sh
+          done
+          ls -lh *.tar.gz
+
+      # 复用同一个 tag：install.sh 用的是 releases/latest，
+      # 反复删建同一个 tag 比每次递增版本号省事，也避免 latest 指到旧包。
+      - name: 发布
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: homesync ${{ steps.ver.outputs.tag }}
+          body: |
+            PublicVPNList 家宽节点 -> 3x-ui 面板同步器。
+
+            ```bash
+            bash <(curl -fsSL https://raw.githubusercontent.com/xiaoxinkeji/cfnew-pvl/main/install.sh)
+            hs
+            ```
+
+            单文件静态二进制，零第三方依赖。自动探测本机 3x-ui。
+          files: dist/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}

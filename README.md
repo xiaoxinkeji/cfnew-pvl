@@ -1,5 +1,9 @@
 # cfnew-pvl
 
+Use this skill when generating Cloudflare Worker subscriptions automatically, when serving PublicVPNList nodes without running your own server, or when syncing residential broadband nodes into a 3x-ui panel. Use proactively for listing environment variables, for mapping workload targets, for debugging 403 and 503 responses, and for choosing between the pvl, pvluri and pvlsb targets.
+
+See also [README-PVL.md](README-PVL.md) for PublicVPNList nodes, [README-3XUI.md](README-3XUI.md) for 3x-ui sync, and [docs/architecture.md](docs/architecture.md) for module layout.
+
 基于 [byJoey/cfnew](https://github.com/byJoey/cfnew) v3.1 改造。**上游是 Cloudflare Worker 订阅生成器，这个 fork 的重点是把它换成不需要自建服务器的节点获取方式，并补上落地到 3x-ui 的工具链。**
 
 现在仓库里有三块相对独立的东西：
@@ -9,8 +13,9 @@
 | **Worker 订阅**（上游 v3.1 原样保留） | 一个 Cloudflare Worker / Pages 脚本，产出 Clash / sing-box 订阅 | 部署到 CF，喂给客户端 |
 | **PublicVPNList 公共节点** | 直接吃第三方实测清单，不用自己搭服务器、不用 CF 前置 | Worker 的 `pvl` / `pvluri` / `pvlsb` 三个 target |
 | **`homesync`**（Go 写的） | 把家宽节点灌进 3x-ui 面板并持续同步，掉线自动换 | 有 root 的 Linux 服务器，配 3x-ui 用 |
+| **多出口 + 聚合订阅**（`homesync` 的两种模式） | 同时开多个国家出口，并自己起一个聚合订阅端点 | 想把多个出口合成一条订阅喂给客户端 |
 
-三块可以单独用，也可以一起用。
+三块可以单独用，也可以一起用。后两项是同一个二进制的两种模式（`-mode sync` / `-mode sub`）。
 
 > **⚠️ 重要：部署后请将兼容日期设置为 `2026-01-20`**
 >

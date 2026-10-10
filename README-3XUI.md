@@ -1,5 +1,10 @@
 # 家宽落地 → 3x-ui 自动同步（Go 版）
 
+Use this skill when syncing residential broadband nodes into 3x-ui, when testing latency against a panel, or when replacing dropped nodes automatically. Use proactively for installing the homesync binary, for configuring the panel address, and for diagnosing auth failures.
+
+Companion documents: [README.md](README.md), [README-PVL.md](README-PVL.md), [docs/troubleshooting.md](docs/troubleshooting.md).
+
+
 `cmd/homesync` —— 把 PublicVPNList 上实测可用的家宽（住宅宽带）节点自动灌进 3x-ui 面板，并按间隔持续同步，掉线的自动换掉。
 
 **单文件静态二进制，零第三方依赖**（只用 Go 标准库），拷到目标机器直接跑，不用装 Go、不用装 Python。
@@ -28,21 +33,44 @@ mixed tunnel tun mtproto amneziawg tuic
 
 ```text
 PublicVPNList 家宽节点
-    │  openvpn 客户端（本机）
-    ▼
-  tun0 网卡
-    │  3x-ui tunnel（dokodemo-door）inbound
-    ▼
-  xray 出站 → 出口 IP = 家宽节点 IP
+    ↓  openvpn（跑在独立 netns 里）
+netns fo1 ── veth ── 母机
+    ↓
+母机 SOCKS5 端口 21001   ← 连这个就等于用那个家宽 IP
+    ↓
+3x-ui outbound + routing（inbound 归你管，我们只加出站）
 ```
 
-本工具负责：挑节点 → 换 .ovpn → 起 openvpn → 建 tunnel inbound → 定期体检，挂了自动换下一个重建。
+一条隧道 = 一个 netns + 一个 SOCKS5 端口。**一个端口 = 一个家宽出口 IP**。
 
-### 路线 B —— 纯 xray，开箱即用
+为什么不直接用 tun：tun 是全局的，多条隧道会互相顶路由表。
+netns 给每条隧道一套独立路由，互不干扰。
 
-只同步 PublicVPNList 上的**多协议家宽节点**（vless / trojan / ss / vmess / hysteria2）。这些是现成的 share URI，在 3x-ui 里就是正常的 inbound，不需要 openvpn、不需要 tun 网卡。出口 IP 同样是家宽的。
+#### 对 3x-ui 的对接方式（重要）
 
----
+**不建 inbound。** 只改 xray 的 outbound 和 routing：
+
+```jsonc
+// outbound：指向本地 SOCKS5 端口
+{"tag":"homesync-<host>", "protocol":"socks",
+ "settings":{"servers":[{"address":"127.0.0.1","port":21001}]}}
+
+// routing：把你已有的 inbound 绑到这个出口
+{"type":"field", "inboundTag":["你的inbound"], "outboundTag":"homesync-<host>"}
+```
+
+inbound 是你自己的入口（带自己的证书），我们只管出站和路由，
+两者互不干扰。只有带 `homesync-` 前缀的条目会被清理。
+
+> **为什么不能把家宽节点直接建成 inbound**：真机实测过，会让 xray
+> 崩溃重启（`REALITY shortIds` 非法、`TLS` 缺证书），而面板还报「成功」。
+> 因为 share URI 是**出站凭据**（连别人用的），inbound 是**入站**
+> （别人连我用的），方向是反的。
+
+### 路线 B —— 多协议节点清单（`-mode xray`）
+
+抓 vless/trojan/ss/vmess/hysteria2 的 share URI，做清单或订阅用。
+**它们不能直接当 inbound 用**（同上，方向不对）；要落地走路线 A。
 
 ## 一键安装（推荐）
 
@@ -96,6 +124,19 @@ hs uninstall    # 卸载
 ```
 
 ---
+
+## 输出格式与入参
+
+`cmd/homesync` 的 **input parameters** 全部来自 `config.json`（面板地址、账号密码、inbound 前缀、
+同步间隔、并发数）与命令行开关。它 **returns** 退出码 0 表示本轮同步收敛完成，
+并在每轮结束后 **outputs** 一行汇总（新增 / 删除 / 跳过 各多少）。
+
+**output format** 有两处落点：
+
+- 3x-ui 面板里的 inbound 列表（实际生效对象）
+- `sync_state.json`（本地增量状态，下次启动用来判断哪些该换）
+
+排查时先看这两个，再看日志。
 
 ## 快速开始
 
@@ -166,6 +207,41 @@ sudo ./homesync -mode xray -daemon 1800
 **只删本工具建的**（tag 带 `pvl-home-` 前缀），你手工建的 inbound 一个都不会碰。
 
 ---
+
+## 示例
+
+### 用法：一条命令装完并常驻同步
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/xiaoxinkeji/cfnew-pvl/main/install.sh)
+# 装完用 hs 打开管理菜单
+hs
+```
+
+### 用法：手动跑一轮，看本轮结果
+
+```bash
+cd cmd/homesync
+go build -o homesync .
+./homesync -once -config config.json
+```
+
+```json
+{
+  "generated": "2026-10-10T17:00:00+08:00",
+  "inbounds_created": 42,
+  "inbounds_deleted": 3,
+  "skipped_unhealthy": 11
+}
+```
+
+### 决策参考 / When to use：要不要开自动同步
+
+| 情况 | 建议 | 取舍理由 |
+| --- | --- | --- |
+| 面板长期用 | 开定时同步 | 家宽节点掉得快，不刷就全是死节点 |
+| 临时测一次 | 用 `-once` | 不需要常驻进程，也不写 systemd |
+| 面板上有手配节点 | 加 inbound 前缀区分 | 避免同步把手工配置的节点删掉 |
 
 ## 参数
 

@@ -312,9 +312,12 @@ if (fs.existsSync(json路径)) {
     const 模块表 = {};
     // 键有两种写法：'south-korea'（带引号）或 japan（裸标识符）。
     // 必须用同一条正则覆盖两种，分成两条交替会把带引号的键先匹配掉、拿不到值。
-    for (const m of 匹配[1].matchAll(/(?:'([a-z]+(?:-[a-z]+)*)'|([a-z]+(?:-[a-z]+)*))\s*:\s*'([A-Z]{2})'/g)) {
-      const 键 = m[1] || m[2];
-      if (键) 模块表[键] = m[3];
+    // 键可能有三种写法：'south-korea' / "south-korea" / japan。
+    // 必须一条正则覆盖全部——拆成多条交替时，靠前的那条会把键先吃掉、拿不到值。
+    for (const m of 匹配[1].matchAll(
+      /(?:'([a-z]+(?:-[a-z]+)*)'|"([a-z]+(?:-[a-z]+)*)"|([a-z]+(?:-[a-z]+)*))\s*:\s*'([A-Z]{2})'/g)) {
+      const 键 = m[1] || m[2] || m[3];
+      if (键) 模块表[键] = m[4];
     }
     const 键差 = Object.keys(表).filter(k => !(k in 模块表))
       .concat(Object.keys(模块表).filter(k => !(k in 表)));

@@ -121,9 +121,10 @@ python3 tools/fetch_publicvpnlist.py --proto-only --workers 4 --sleep 1.0 --limi
 `tools/test_sync_3xui.py` 是脚本式断言（末尾 `sys.exit`），**直接跑**：
 
 ```bash
-python3 tools/test_sync_3xui.py   # 3x-ui 同步器自测（脚本式，直接跑）
+node tools/build.js --check       # 检查 src/ 与内联产物是否漂移（CI 也跑这个）
 node tools/test_pvl.mjs           # 公共节点模块自测
 node tools/smoke_sub.mjs          # Worker 端到端冒烟（三个订阅目标的门禁）
+python3 tools/test_sync_3xui.py   # 3x-ui 同步器自测（脚本式，直接跑）
 ```
 
 不要用 `pytest` 收集它 —— import 阶段就会 `sys.exit`，pytest 会 INTERNALERROR。

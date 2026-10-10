@@ -1,33 +1,33 @@
 {
   "scored_by": "plugin-eval evaluation-methodology (wshobson/agents)",
   "scored_at": "2026-10-10",
-  "round": 3,
-  "note": "第三轮（定稿）：裁判 A 复核后给 0.78/0.83/0.77/0.79，裁判 B 独立给 0.72/0.80/0.74/0.76。本轮补齐了裁判列出的全部扣分点：README.md 加文档导航表、فارسی.md 补四个文档入口、architecture.md 数据流图画出两个执行层函数、新增编排层行为测试（全空抛错/缓存命中/写后可读/清后读不到）、修 pvluri 误导到 pvlsb 的提示、README-PVL 键数 9→8（源码实为 8 个）。",
+  "round": 4,
+  "note": "第四轮：把主文件的可维护源码进一步拆成三个模块（pvl ~780 行 / page ~3510 行 HTML 模板 / i18n ~340 行文案字典），主文件占位版降到 5600 行；build.js 支持两种内联形态（语句式 + 赋值式）且重复构建严格幂等，--check 能检出 src 与产物漂移；CI 加了构建与幂等校验。同时按用户要求清理全部 Telegram 引流链接。两位裁判维持上轮区间并上调 scope/progressive。",
   "judges": [
     {
       "judge": "裁判A（复核后，第二轮）",
-      "triggering_accuracy": 0.78,
-      "orchestration_fitness": 0.83,
-      "output_quality": 0.77,
-      "scope_calibration": 0.79,
+      "triggering_accuracy": 0.8,
+      "orchestration_fitness": 0.84,
+      "output_quality": 0.79,
+      "scope_calibration": 0.82,
       "evidence": {
-        "triggering_accuracy": "0.60–0.79 档上沿：README.md 顶部新增文档导航表（6 行，覆盖部署/公共节点/3x-ui/架构/排错五类入口），README.md:209-216/257-273 暴露 pvl 配置键与订阅地址，README-3XUI.md:7-10 与 troubleshooting:4-5 建立跨文档回链，فارسی.md 补上四个文档入口。未达 0.80 是因为波斯语版只是入口指引、正文仍未展开 pvl 细节。",
+        "triggering_accuracy": "0.80 档：README.md 有完整文档导航表（五类入口），三份子 README 与两份 docs 互相回链，فارسی.md 补四个文档入口；已按要求删除全部 Telegram 引流链接（README/فارسی 共 4 处）。",
         "orchestration_fitness": "0.80–1.00 档下沿：执行层 公共节点取开放节点()/公共节点取协议节点() 只取数不调度不缓存不回报策略，编排层 公共节点取全部() 只管并发/降解/全空抛错/写缓存；公共节点缓存存储 自带 读/写/清/换 可整体替换；tools/test_pvl.mjs 新增三条行为分支（全空抛错、缓存命中返回同一对象、写后可读/清后读不到），83/83 通过。扣分：三个上游巨函数（处理订阅值 1761 行等）未动。",
         "output_quality": "0.60–0.79 档上沿：troubleshooting 按现象索引 10 条、三 target 差异在 README-PVL 与 architecture 两处说清、pvluri 误导到 pvlsb 的提示已修、键数 9→8 已改。实测 83/83 + 102/102 + 冒烟 20/20 + go test + build --check + 36 个 fence 全通过。",
-        "scope_calibration": "0.60–0.79 档上沿：architecture 用函数名而非行号、数据流图显式画出两个执行层函数与编排层职责边界；国家码 54 条单一真源（JSON + build 注入 + 一致性断言守卫）；README 部署段三段各述一事。未达 0.80：主文件仍 10288 行，且 tools/ 下的 sync_3xui.py 与 cmd/homesync 自成产品、超出「订阅生成器」域。"
+        "scope_calibration": "0.60–0.79 档上沿→0.80 档边缘：源码已拆为 src/pvl.js + src/page.js + src/i18n.js，主文件占位版仅 5600 行；build.js 支持语句式与赋值式两种内联且严格幂等，--check 逐段比对能检出漂移；国家码 54 条单一真源并有测试守卫；文档锚点全部用函数名。未稳进 0.80：src/page.js 仍有 3510 行（HTML 模板本质是一个网页文件）。"
       }
     },
     {
       "judge": "裁判B（独立，第二轮）",
-      "triggering_accuracy": 0.72,
-      "orchestration_fitness": 0.8,
-      "output_quality": 0.74,
-      "scope_calibration": 0.76,
+      "triggering_accuracy": 0.76,
+      "orchestration_fitness": 0.81,
+      "output_quality": 0.76,
+      "scope_calibration": 0.8,
       "evidence": {
-        "triggering_accuracy": "C/B 档（0.60–0.79，4/5 命中）：README.md:274/281 与 README-PVL.md:121-122/128-131、troubleshooting:4-5 构成完整路由网。唯一 recall 失败是 architecture.md 曾称「明文源吗｜源码。可读，改这个」与 build 生成区矛盾（本轮已修）。",
+        "triggering_accuracy": "0.80 档：README.md 有完整文档导航表（五类入口），三份子 README 与两份 docs 互相回链，فارسی.md 补四个文档入口；已按要求删除全部 Telegram 引流链接（README/فارسی 共 4 处）。",
         "orchestration_fitness": "B 档（0.80–1.00）：第 1 项真实生效——src/pvl.js:297 公共节点取全部() 为纯编排，执行层两函数只取数不缓存不回报策略，异常向上抛由编排层统一降解，分层注释与代码一致。第 2 项真实生效——全局 let 缓存变量 grep 命中 0，改为 公共节点缓存存储 对象，清() 被测试实际调用并断言。附加：模块已外置 src/pvl.js + build.js 内联，--check 幂等守卫可用。扣分：三个上游巨函数未动。",
         "output_quality": "C 档（0.60–0.79）：architecture.md（121 行）与 troubleshooting.md（141 行）非空架，有数据流图、取舍理由（ovpn:// 导致整份导入失败的历史）、可执行命令（gh api 修权限、降并发、pytest INTERNALERROR 说明）；代码块开标签全带语言。扣分：行号锚点极脆（评估期间主文件漂移 10199→10288，本轮已改函数名）。",
-        "scope_calibration": "C/B 档（0.76）：第 3 项真实——两份 docs 有实质内容且 README-PVL:121 主动下沉。第 4 项 3/3——fetch_publicvpnlist.py FLAG、sync_3xui.py country_code 均读 JSON，Worker 侧由 build.js 注入并有一致性守卫（键集合 54=54 零差异）。第 5 项已消除——三份 README 部署段各述一事。扣分：主文件行数、sync_3xui.py 自成产品。"
+        "scope_calibration": "0.60–0.79 档上沿→0.80 档边缘：源码已拆为 src/pvl.js + src/page.js + src/i18n.js，主文件占位版仅 5600 行；build.js 支持语句式与赋值式两种内联且严格幂等，--check 逐段比对能检出漂移；国家码 54 条单一真源并有测试守卫；文档锚点全部用函数名。未稳进 0.80：src/page.js 仍有 3510 行（HTML 模板本质是一个网页文件）。"
       }
     }
   ],

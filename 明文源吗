@@ -2681,7 +2681,6 @@ async function 获取加密客户端问候配置(域名522) {
   }
 }
 // ======================= 公共节点（PublicVPNList 全量直出） =======================
-
 // ↓↓↓ 公共节点模块由 tools/build.js 从 src/pvl.js 内联而来，不要直接改这块 ↓↓↓
 // 公共节点（PublicVPNList）模块源码。
 // 这个文件不直接部署——tools/build.js 会把它内联进 明文源吗（部署必须是单文件）。
@@ -6829,12 +6828,9 @@ async function 处理订阅值(请求241, 用户240 = null) {
             </button>
         </div>
         <script>
-// 地址从服务器配置注入
 var 订阅转换网址 = "${订阅转换接口}";
-// 远程配置URL（硬编码）
 var 远程配置网址 = "${远程配置网址}";
 
-// 翻译对象
 const 本地值20215 = {
   zh: {
     subscriptionCopied: '${解码64('6K6i6ZiF6ZO+5o6l5bey5aSN5Yi2')}',
@@ -6864,43 +6860,35 @@ if (已保存语言20209 === 'fa' || 已保存语言20209 === 'fa-IR') {
 const 翻译值20207 = 本地值20215[是否值20208 ? 'fa' : 'zh'];
 function 切换语言(语言) {
   localStorage.setItem('preferredLanguage', 语言);
-  // 设置Cookie（有效期1年）
   const 过期日期20206 = new Date();
   过期日期20206.setFullYear(过期日期20206.getFullYear() + 1);
   document.cookie = 'preferredLanguage=' + 语言 + '; path=/; expires=' + 过期日期20206.toUTCString() + '; SameSite=Lax';
-  // 刷新页面，不使用URL参数
   window.location.reload();
 }
 
-// 页面加载时检查 localStorage 和 Cookie，并清理URL参数
 window.addEventListener('DOMContentLoaded', function () {
   const 已保存语言20205 = localStorage.getItem('preferredLanguage') || 获取凭据20214('preferredLanguage');
   const 网址参数 = new URLSearchParams(window.location.search);
   const 网址语言 = 网址参数.get('lang');
 
-  // 如果URL中有语言参数，移除它并设置Cookie
   if (网址语言) {
     const 当前网址20204 = new URL(window.location.href);
     当前网址20204.searchParams.delete('lang');
     const 新网址 = 当前网址20204.toString();
 
-    // 设置Cookie
     const 过期日期20203 = new Date();
     过期日期20203.setFullYear(过期日期20203.getFullYear() + 1);
     document.cookie = 'preferredLanguage=' + 网址语言 + '; path=/; expires=' + 过期日期20203.toUTCString() + '; SameSite=Lax';
     localStorage.setItem('preferredLanguage', 网址语言);
 
-    // 使用history API移除URL参数，不刷新页面
     window.history.replaceState({}, '', 新网址);
   } else if (已保存语言20205) {
-    // 如果localStorage中有但Cookie中没有，同步到Cookie
     const 过期日期 = new Date();
     过期日期.setFullYear(过期日期.getFullYear() + 1);
     document.cookie = 'preferredLanguage=' + 已保存语言20205 + '; path=/; expires=' + 过期日期.toUTCString() + '; SameSite=Lax';
   }
 });
 
-// 赛博朋克风 toast 通知 (替代 alert)
 window.显示提示 = function (消息20202, 类型20201, 本地值20200) {
   本地值20200 = 本地值20200 || {};
   var 堆栈 = document.getElementById('cpToastStack');
@@ -7050,7 +7038,6 @@ function 生成客户端链接(客户端类型, 客户端名称) {
       });
     }
   } else {
-    // 统一走内部格式转换
     最终网址 = 订阅网址20191 + (订阅网址20191.includes('?') ? '&' : '?') + "target=" + 客户端类型;
     var 网址值20190 = document.getElementById("clientSubscriptionUrl");
     网址值20190.textContent = 最终网址;
@@ -7101,7 +7088,6 @@ function 生成客户端链接(客户端类型, 客户端名称) {
   }
 }
 
-// 页面特效图形化开关 (localStorage 持久化)
 window.应用页面特效 = function () {
   var 本地值20189 = localStorage.getItem('cp-fx-off') === '1';
   document.body.classList.toggle('fx-off', 本地值20189);
@@ -7183,7 +7169,6 @@ async function 检查系统状态() {
     const 当前地址 = document.getElementById('currentIP');
     const 地区值 = document.getElementById('regionMatch');
 
-    // 获取当前语言设置（优先从Cookie/localStorage读取）
     function 获取凭据20178(名称20177) {
       const 值20176 = '; ' + document.cookie;
       const 部分列表20175 = 值20176.split('; ' + 名称20177 + '=');
@@ -7279,12 +7264,10 @@ async function 检查系统状态() {
         是否自定义地址值 = true;
         值地区20169 = 'CUSTOM';
 
-        // 获取自定义IP的详细信息
         const 自定义地址值 = 数据20167.ci || 翻译值20170.unknown;
         值值20179.innerHTML = 翻译值20170.detectionMethod + '<span style="color: #ffb400;">⚙️ ' + 翻译值20170.customIPMode + '</span>';
         地区状态.innerHTML = 翻译值20170.workerRegion + '<span style="color: #ffb400;">🔧 ' + 翻译值20170.customIPModeDesc + '</span>';
 
-        // 显示自定义IP配置状态，包含具体IP
         if (备用状态) 备用状态.innerHTML = 翻译值20170.proxyIPStatus + '<span style="color: #ffb400;">🔧 ' + 翻译值20170.usingCustomProxyIP + 自定义地址值 + '</span>';
         if (当前地址) 当前地址.innerHTML = 翻译值20170.currentIP + '<span style="color: #ffb400;">✅ ' + 自定义地址值 + 翻译值20170.customIPConfig + '</span>';
         if (地区值) 地区值.innerHTML = 翻译值20170.regionMatch + '<span style="color: #ffb400;">⚠️ ' + 翻译值20170.customIPModeDisabled + '</span>';
@@ -7295,7 +7278,6 @@ async function 检查系统状态() {
         值值20179.innerHTML = 翻译值20170.detectionMethod + '<span style="color: #00b380;">' + 翻译值20170.manualRegion + '</span>';
         地区状态.innerHTML = 翻译值20170.workerRegion + '<span style="color: #00ff9d;">🎯 ' + 翻译值20170.regionNames[值地区20169] + 翻译值20170.manualRegionDesc + '</span>';
 
-        // 显示配置状态而不是检测状态
         if (备用状态) 备用状态.innerHTML = 翻译值20170.proxyIPStatus + '<span style="color: #00ff9d;">✅ ' + 翻译值20170.proxyIPAvailable + '</span>';
         if (当前地址) 当前地址.innerHTML = 翻译值20170.currentIP + '<span style="color: #00ff9d;">✅ ' + 翻译值20170.smartSelection + '</span>';
         if (地区值) 地区值.innerHTML = 翻译值20170.regionMatch + '<span style="color: #00ff9d;">✅ ' + 翻译值20170.sameRegionIP + '</span>';
@@ -7309,7 +7291,6 @@ async function 检查系统状态() {
     }
     地区状态.innerHTML = 翻译值20170.workerRegion + '<span style="color: #00ff9d;">✅ ' + 翻译值20170.regionNames[值地区20169] + '</span>';
 
-    // 直接显示配置状态，不再进行检测
     if (备用状态) {
       备用状态.innerHTML = 翻译值20170.proxyIPStatus + '<span style="color: #00ff9d;">✅ ' + 翻译值20170.proxyIPAvailable + '</span>';
     }
@@ -7434,7 +7415,6 @@ async function 测试接口() {
   }
 }
 
-// 配置管理相关函数
 async function 检查键值状态() {
   const 接口网址20134 = window.location.pathname + '/api/config';
   try {
@@ -7477,7 +7457,6 @@ async function 检查键值状态() {
     };
     const 翻译值20124 = 本地值20125[是否值20126 ? 'fa' : 'zh'];
     if (响应20133.status === 503) {
-      // KV未配置
       document.getElementById('kvStatus').innerHTML = '<span style="color: #ffb400;">' + 翻译值20124.kvDisabled + '</span>';
       document.getElementById('configCard').style.display = 'block';
       document.getElementById('currentConfig').textContent = 翻译值20124.kvNotConfigured;
@@ -7485,7 +7464,6 @@ async function 检查键值状态() {
       try {
         const 数据20123 = await 响应20133.json();
 
-        // 检查响应是否包含KV配置信息
         if (数据20123 && 数据20123.kvEnabled === true) {
           document.getElementById('kvStatus').innerHTML = '<span style="color: #00ff9d;">' + 翻译值20124.kvEnabled + '</span>';
           document.getElementById('configContent').style.display = 'block';
@@ -7705,7 +7683,6 @@ async function 加载当前配置() {
     }
     const 配置 = await 响应20116.json();
 
-    // 过滤掉内部字段 kvEnabled
     const 显示配置 = {};
     for (const [键20114, 值20113] of Object.entries(配置)) {
       if (键20114 !== 'kvEnabled') {
@@ -7728,22 +7705,18 @@ async function 加载当前配置() {
   }
 }
 
-// 更新路径类型显示
 function 更新路径类型状态(自定义路径) {
   const 路径类型状态 = document.getElementById('pathTypeStatus');
   const 当前网址20110 = window.location.href;
   const 路径部分列表 = window.location.pathname.split('/').filter(参数值20109 => 参数值20109);
   const 当前路径 = 路径部分列表.length > 0 ? 路径部分列表[0] : '';
   if (自定义路径 && 自定义路径.trim()) {
-    // 使用自定义路径 (d)
     路径类型状态.innerHTML = '<div style="color: #00ff9d;">使用类型: <strong>自定义路径 (d)</strong></div>' + '<div style="margin-top: 5px; color: #00f0ff;">当前路径: <span style="color: #ffb400;">' + 自定义路径 + '</span></div>' + '<div style="margin-top: 5px; font-size: 0.9rem; color: #7aa9c4;">访问地址: ' + (当前网址20110.split('/')[0] + '//' + 当前网址20110.split('/')[2]) + 自定义路径 + '/sub</div>';
   } else {
-    // 使用 UUID (u)
     路径类型状态.innerHTML = '<div style="color: #00ff9d;">使用类型: <strong>UUID 路径 (u)</strong></div>' + '<div style="margin-top: 5px; color: #00f0ff;">当前路径: <span style="color: #ffb400;">' + (当前路径 || '(UUID)') + '</span></div>' + '<div style="margin-top: 5px; font-size: 0.9rem; color: #7aa9c4;">访问地址: ' + 当前网址20110.split('/sub')[0] + '/sub</div>';
   }
 }
 
-// 更新wk地区选择的启用/禁用状态
 function 更新工作器地区状态() {
   const 自定义地址输入20108 = document.getElementById('customIP');
   const 值地区 = document.getElementById('wkRegion');
@@ -7752,12 +7725,10 @@ function 更新工作器地区状态() {
     const 是否有自定义地址 = 自定义地址输入20108.value.trim() !== '';
     值地区.disabled = 是否有自定义地址;
 
-    // 添加视觉反馈
     if (是否有自定义地址) {
       值地区.style.opacity = '0.5';
       值地区.style.cursor = 'not-allowed';
       值地区.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-      // 显示提示信息
       if (值地区值) {
         值地区值.style.display = 'block';
         值地区值.style.color = '#ffb400';
@@ -7766,7 +7737,6 @@ function 更新工作器地区状态() {
       值地区.style.opacity = '1';
       值地区.style.cursor = 'pointer';
       值地区.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-      // 隐藏提示信息
       if (值地区值) {
         值地区值.style.display = 'none';
       }
@@ -7790,12 +7760,10 @@ async function 保存配置(配置数据20107) {
     if (!响应20106.ok) {
       const 错误文本20105 = await 响应20106.text();
 
-      // 尝试解析 JSON 错误信息
       try {
         const 错误数据20104 = JSON.parse(错误文本20105);
         显示状态(错误数据20104.message || '保存失败', 'error');
       } catch (解析错误20103) {
-        // 如果不是 JSON，直接显示文本
         显示状态('保存失败: ' + 错误文本20105, 'error');
       }
       return;
@@ -7804,9 +7772,7 @@ async function 保存配置(配置数据20107) {
     显示状态(结果20102.message, 结果20102.success ? 'success' : 'error');
     if (结果20102.success) {
       await 加载当前配置();
-      // 更新wk地区选择状态
       更新工作器地区状态();
-      // 保存成功后刷新页面以更新系统状态
       setTimeout(function () {
         window.location.reload();
       }, 1500);
@@ -7826,7 +7792,6 @@ function 显示状态(消息20100, 类型20099) {
       状态值.style.display = 'none';
     }, 3000);
   }
-  // 同步在底部操作条上方弹出霓虹反馈
   if (typeof window.显示操作状态 === 'function') {
     window.显示操作状态(消息20100, 类型20099 === 'success' ? 'ok' : 'err');
   }
@@ -7878,12 +7843,10 @@ async function 重置全部配置() {
       if (!响应20098.ok) {
         const 错误文本 = await 响应20098.text();
 
-        // 尝试解析 JSON 错误信息
         try {
           const 错误数据 = JSON.parse(错误文本);
           显示状态(错误数据.message || '重置失败', 'error');
         } catch (解析错误) {
-          // 如果不是 JSON，直接显示文本
           显示状态('重置失败: ' + 错误文本, 'error');
         }
         return;
@@ -7892,9 +7855,7 @@ async function 重置全部配置() {
       显示状态(结果20097.message || '配置已重置', 结果20097.success ? 'success' : 'error');
       if (结果20097.success) {
         await 加载当前配置();
-        // 更新wk地区选择状态
         更新工作器地区状态();
-        // 刷新页面以更新系统状态
         setTimeout(function () {
           window.location.reload();
         }, 1500);
@@ -7934,25 +7895,21 @@ document.addEventListener('DOMContentLoaded', function () {
   检查键值状态();
   检查加密问候状态();
 
-  // ECH 开启时自动联动开启仅TLS
   const 加密客户端问候复选框 = document.getElementById('ech');
   const 端口控制 = document.getElementById('portControl');
   if (加密客户端问候复选框 && 端口控制) {
     加密客户端问候复选框.addEventListener('change', function () {
       if (this.checked) {
-        // ECH 开启时，自动设置仅TLS为 yes
         端口控制.value = 'yes';
       }
       同步联动界面状态();
     });
 
-    // 页面加载时，如果 ECH 已勾选，也自动设置仅TLS
     if (加密客户端问候复选框.checked) {
       端口控制.value = 'yes';
     }
   }
 
-  // 监听customIP输入框变化，实时更新wk地区选择状态
   const 自定义地址输入 = document.getElementById('customIP');
   if (自定义地址输入) {
     自定义地址输入.addEventListener('input', function () {
@@ -7977,7 +7934,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  // 阻止表单默认提交（保存按钮已统一到底部操作条）
   ['regionForm', 'otherConfigForm', 'advancedConfigForm'].forEach(function (本地值20093) {
     const 表单值 = document.getElementById(本地值20093);
     if (表单值) 表单值.addEventListener('submit', function (事件值20092) {
@@ -7985,7 +7941,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  // 在任意输入框按下回车，触发统一保存
   document.querySelectorAll('#configContent input[type="text"], #configContent input[type="number"]').forEach(function (本地值20091) {
     本地值20091.addEventListener('keydown', function (事件值20090) {
       if (事件值20090.key === 'Enter') {
@@ -7995,12 +7950,10 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  // 统一保存：一次性收齐所有字段
   function 收集全部配置() {
     return 收集界面配置();
   }
   async function 保存全部配置() {
-    // 至少启用一个通道
     const 值值20085 = document.getElementById('ev'),
       值值20084 = document.getElementById('et'),
       值值20083 = document.getElementById('ex');
@@ -8037,7 +7990,6 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   window.显示操作状态 = 显示操作状态;
 
-  // 绑定底部统一操作条
   const 值操作值 = document.getElementById('cpActionBar');
   const 值值保存值 = document.getElementById('cpBtnSaveAll');
   if (值值保存值) 值值保存值.addEventListener('click', async function () {
@@ -8063,7 +8015,6 @@ document.addEventListener('DOMContentLoaded', function () {
   const 值值重置 = document.getElementById('cpBtnReset');
   if (值值重置) 值值重置.addEventListener('click', 重置全部配置);
 
-  // 修改字段时把 FAB 标记为 "未保存"
   function 标记已修改() {
     if (值操作值) 值操作值.classList.add('cp-dirty');
   }
@@ -8074,14 +8025,12 @@ document.addEventListener('DOMContentLoaded', function () {
       if (!本地值20077 || !本地值20077.tagName) return;
       const 本地值20076 = 本地值20077.tagName.toLowerCase();
       if (本地值20076 === 'input' || 本地值20076 === 'select' || 本地值20076 === 'textarea') {
-        // 跳过延迟测试相关输入，避免误触
         if (本地值20077.id && /^(latencyTestInput|fetchURLInput|latencyTestPort|randomIPCount|testThreads|ipSourceSelect)$/.test(本地值20077.id)) return;
         标记已修改();
       }
     });
   });
 
-  // Ctrl+S / Cmd+S 触发保存
   window.addEventListener('keydown', function (事件值20075) {
     if ((事件值20075.ctrlKey || 事件值20075.metaKey) && (事件值20075.key === 's' || 事件值20075.key === 'S')) {
       事件值20075.preventDefault();
@@ -8139,7 +8088,6 @@ document.addEventListener('DOMContentLoaded', function () {
     随机地址数量.addEventListener('input', function () {
       localStorage.setItem('randomIPCount', this.value);
     });
-    // 初始化时，如果默认是隐藏的，则禁用输入框
     if (随机数量值 && 随机数量值.style.display === 'none') {
       随机地址数量.disabled = true;
     }
@@ -8162,7 +8110,6 @@ document.addEventListener('DOMContentLoaded', function () {
     网址获取值.style.display = 当前源 === 'urlFetch' ? 'block' : 'none';
     云墙随机值.style.display = 当前源 === 'cfRandom' ? 'block' : 'none';
     随机数量值.style.display = 当前源 === 'cfRandom' ? 'block' : 'none';
-    // 当隐藏时禁用输入框，避免表单验证错误
     if (随机地址数量) {
       随机地址数量.disabled = 当前源 !== 'cfRandom';
     }
@@ -8196,7 +8143,6 @@ document.addEventListener('DOMContentLoaded', function () {
       网址获取值.style.display = 值 === 'urlFetch' ? 'block' : 'none';
       云墙随机值.style.display = 值 === 'cfRandom' ? 'block' : 'none';
       随机数量值.style.display = 值 === 'cfRandom' ? 'block' : 'none';
-      // 当隐藏时禁用输入框，避免表单验证错误
       if (随机地址数量) {
         随机地址数量.disabled = 值 !== 'cfRandom';
       }
@@ -8223,7 +8169,6 @@ document.addEventListener('DOMContentLoaded', function () {
       获取地址值.disabled = true;
       获取地址值.textContent = '${是否值236 ? 'در حال دریافت...' : '获取中...'}';
       try {
-        // 支持多个 URL（逗号分隔）以及返回内容中逗号分隔的多个 IP/节点
         const 网址列表 = Array.from(new Set(获取网址.split(',').map(网址值20066 => 网址值20066.trim()).filter(网址值20065 => 网址值20065)));
         const 值项目列表 = [];
         for (const 网址值 of 网址列表) {
@@ -8233,7 +8178,6 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           const 文本20064 = await 响应.text();
 
-          // 先按行分割，再在每行内按逗号分割，兼容“多行 + 逗号分隔”两种格式
           const 值网址项目列表 = 文本20064.split(/\\r?\\n/).map(行值20063 => 行值20063.trim()).filter(行值20062 => 行值20062 && !行值20062.startsWith('#')).flatMap(行值 => 行值.split(',').map(参数值20061 => 参数值20061.trim()).filter(参数值 => 参数值));
           值项目列表.push(...值网址项目列表);
         }
@@ -8306,7 +8250,6 @@ document.addEventListener('DOMContentLoaded', function () {
         };
       }
       function 渲染结果(结果20046, 索引20045, 值值20044 = true) {
-        // 只展示在线优选成功的结果，失败/超时的不再显示
         if (!结果20046.success) {
           return null;
         }
@@ -8364,7 +8307,6 @@ document.addEventListener('DOMContentLoaded', function () {
       开始测试值.style.display = 'inline-block';
       值测试值.style.display = 'none';
 
-      // 更新城市选择器
       更新城市筛选();
     });
   }
@@ -8391,7 +8333,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // 获取选中项的通用函数
   function 获取已选项目() {
     const 本地值20029 = 结果列表列表.querySelectorAll('input[type="checkbox"]:checked');
     if (本地值20029.length === 0) {
@@ -8411,7 +8352,6 @@ document.addEventListener('DOMContentLoaded', function () {
     return 已选项目列表20028;
   }
 
-  // 覆盖添加
   if (覆盖已选值) {
     覆盖已选值.addEventListener('click', async function () {
       const 已选项目列表20024 = 获取已选项目();
@@ -8441,7 +8381,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // 追加添加
   if (追加已选值) {
     追加已选值.addEventListener('click', async function () {
       const 已选项目列表 = 获取已选项目();
@@ -8761,13 +8700,11 @@ document.addEventListener('DOMContentLoaded', function () {
     return 机房映射[机房20018] || 机房20018;
   }
 
-  // 城市筛选相关函数
   const 城市筛选值 = document.getElementById('cityFilterContainer');
   const 城市值值 = document.getElementById('cityCheckboxesContainer');
   function 更新城市筛选() {
     if (!城市筛选值 || !城市值值) return;
 
-    // 从测试结果中提取所有可用的城市
     const 城市映射 = new Map();
     测试结果列表.forEach((结果20017, 索引20016) => {
       if (结果20017.success && 结果20017.colo) {
@@ -8789,7 +8726,6 @@ document.addEventListener('DOMContentLoaded', function () {
     城市筛选值.style.display = 'block';
     城市值值.innerHTML = '';
 
-    // 按城市名称排序
     const 城市列表 = Array.from(城市映射.values()).sort((甲值20014, 乙值20013) => 甲值20014.name.localeCompare(乙值20013.name));
     城市列表.forEach(城市 => {
       const 标签 = document.createElement('label');
@@ -8808,12 +8744,10 @@ document.addEventListener('DOMContentLoaded', function () {
       复选框20012.addEventListener('change', 按城市筛选结果);
     });
 
-    // 监听筛选模式变化
     const 筛选值值 = document.querySelectorAll('input[name="cityFilterMode"]');
     筛选值值.forEach(单选框 => {
       单选框.addEventListener('change', function () {
         if (this.value === 'all') {
-          // 切换到"全部城市"模式时，自动选中所有城市复选框
           const 城市值20010 = 城市值值.querySelectorAll('input[type="checkbox"]');
           城市值20010.forEach(本地值20009 => {
             本地值20009.checked = true;
@@ -8830,7 +8764,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const 结果项目列表 = 结果列表列表.querySelectorAll('[data-index]');
     const 城市值 = 城市值值.querySelectorAll('input[type="checkbox"]');
     if (筛选值 === 'fastest10') {
-      // 只选择最快的10个
       const 值结果列表 = 测试结果列表.map((结果, 索引20008) => ({
         result: 结果,
         index: 索引20008
@@ -8848,10 +8781,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
 
-      // 禁用城市复选框
       城市值.forEach(本地值20003 => 本地值20003.disabled = true);
     } else {
-      // 根据选中的城市筛选
       const 已选城市列表 = new Set();
       城市值.forEach(本地值20002 => {
         if (本地值20002.checked) {
@@ -8859,7 +8790,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       });
 
-      // 如果所有城市都被选中（或没有选中任何城市），显示所有结果
       const 值值20001 = 城市值.length > 0 && 已选城市列表.size === 城市值.length;
       const 值值 = 已选城市列表.size === 0;
       结果项目列表.forEach(项目 => {
@@ -8867,29 +8797,23 @@ document.addEventListener('DOMContentLoaded', function () {
         const 复选框 = 项目.querySelector('input[type="checkbox"]');
         if (值值20001 || 值值 || 已选城市列表.has(机房20000)) {
           项目.style.display = 'flex';
-          // 同步更新结果项复选框的选中状态
           if (复选框) {
             if (值值20001) {
-              // 所有城市都选中时，所有结果项复选框都选中
               复选框.checked = true;
             } else if (值值) {
-              // 没有选中任何城市时，所有结果项复选框都取消选中
               复选框.checked = false;
             } else {
-              // 根据城市选择状态同步复选框
               复选框.checked = 已选城市列表.has(机房20000);
             }
           }
         } else {
           项目.style.display = 'none';
-          // 取消选中隐藏的结果项复选框
           if (复选框) {
             复选框.checked = false;
           }
         }
       });
 
-      // 启用城市复选框
       城市值.forEach(本地值 => 本地值.disabled = false);
     }
   }

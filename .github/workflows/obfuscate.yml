@@ -6,9 +6,11 @@ on:
     branches:
       - '**'  # 仅匹配分支推送，排除标签推送
     paths:
-      # 改了模块源码也要重新构建产物，否则部署用的还是旧模块
+      # 改了任一模块源码都要重新构建产物，否则部署用的还是旧模块
       - '明文源吗'
       - 'src/pvl.js'
+      - 'src/page.js'
+      - 'src/i18n.js'
       - 'tools/build.js'
 
 # 提交混淆产物需要写权限，显式声明，不依赖仓库默认设置
@@ -35,6 +37,11 @@ jobs:
       # 幂等：已经是产物时脚本直接跳过。
       - name: Inline modules into single-file worker
         run: node tools/build.js
+
+      # 构建后必须幂等：再跑一次 build 不应改变产物。
+      # 若提交的是占位版或漏了自己的改动，这一步会直接失败。
+      - name: Verify inlined artifact is in sync with src
+        run: node tools/build.js --check
 
       - name: Install Obfuscator
         run: npm install javascript-obfuscator
